@@ -1,8 +1,0 @@
-Metadata-Version: 2.4
-Name: warp
-Version: 0.1.0
-Summary: Warp - Workflow for the Analysis of Rv and Photometry
-Author: Emile Fontanet
-Project-URL: Homepage, https://github.com/EmileFontanet/warp
-Requires-Python: >=3.9
-Description-Content-Type: text/markdown
