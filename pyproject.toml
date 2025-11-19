@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "warp"               # change later
+version = "0.1.0"
+authors = [{name = "Emile Fontanet"}]
+description = "Warp - Workflow for the Analysis of Rv and Photometry"
+readme = "README.md"
+requires-python = ">=3.9"
+
+[project.urls]
+Homepage = "https://github.com/EmileFontanet/warp"
