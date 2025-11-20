@@ -1,2 +1,1 @@
-from . import dace
-from . import cascades
+from .core import Star

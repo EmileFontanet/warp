@@ -5,7 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "warp"               # change later
 version = "0.1.0"
-authors = [{name = "Emile Fontanet"}]
+authors = [
+    {name = "Emile Fontanet", email = "emile.fontanet@unige.ch"}
+]
 description = "Warp - Workflow for the Analysis of Rv and Photometry"
 readme = "README.md"
 requires-python = ">=3.9"
