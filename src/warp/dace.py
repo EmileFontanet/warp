@@ -1,13 +1,18 @@
 import os
 import argparse
 import numpy as np
+import astropy.units as u
+from astropy.time import Time
 import matplotlib.pyplot as plt
 from dace_query.spectroscopy import Spectroscopy
 from astroquery.simbad import Simbad
 import pandas as pd
+from .simbad import query_simbad
+from .utils import apply_secular_correction
 
 
-def download_points(star_name, instrument=None):
+def download_points(star, instrument=None, do_secular_corr=True,
+                    skip_ndrs=True):
     """
     Download old and new DRS data for the specified star.
     Args:
@@ -15,11 +20,13 @@ def download_points(star_name, instrument=None):
     Returns:
 
     """
+    if isinstance(instrument, str):
+        instrument = [instrument]
     excluded_nights = ['2023-12-06',
                        '2023-12-02']  # List of nights to exclude, if any
-    print(f"[INFO] Downloading data for star: {star_name}")
-    dace_id = get_dace_id(star_name)
-    filter = {
+    print(f"[INFO] Downloading data for star: {star.name}")
+    dace_id = get_dace_id(star)
+    filters = {
         'obj_id_daceid': {
             'equal': [dace_id]
         },
@@ -27,36 +34,49 @@ def download_points(star_name, instrument=None):
             'contains': instrument
         }
     }
-    results = pd.DataFrame.from_dict(
-        Spectroscopy.query_database(filters=filter, limit=1000))
-    results = results[~results.date_night.isin(excluded_nights)].copy()
+    if (skip_ndrs):
+        filters['ins_name']['notContains'] = ['NDRS']
+
+    results = Spectroscopy.query_database(
+        filters=filters,
+        output_format='pandas',
+    )
+    if (do_secular_corr):
+        print("[INFO] Applying secular acceleration correction...")
+        results['spectro_ccf_rv'] = apply_secular_correction(
+            star.name,
+            results['obj_date_bjd'],
+            results['spectro_ccf_rv']
+        )
+    # results = results[~results.date_night.isin(excluded_nights)].copy()
     for ins in results.ins_name.unique():
         n_points = len(results[results.ins_name == ins])
         bad_qc_points = len(
             results[(results.ins_name == ins) & (~results.spectro_drs_qc)])
         print(
             f"[INFO] Retrieved {n_points} points, including {bad_qc_points} for which the QC failed, for instrument {ins}.")
-    filtered_results = results[(results.spectro_drs_qc) & (
-        results.spectro_ccf_rv_err > 0)].copy()
-    return results, filtered_results
+
+    return results
 
 
-def get_dace_id(star_name):
-    result_table = Simbad.query_objectids(star_name)
+def get_dace_id(star):
+    result_table = Simbad.query_objectids(star.name)
     try:
         hd_name = [id for id in result_table['id'] if id.startswith('HD')][0]
+        star.hd = hd_name
     except IndexError:
-        hd_name = None
+        star.hd = None
         print('[WARN] No HD name found for this star.')
     try:
         hip_name = [id for id in result_table['id'] if id.startswith('HIP')][0]
+        star.hip = hip_name
     except IndexError:
-        hip_name = None
+        star.hip = None
         print('[WARN] No HIP name found for this star.')
-    for name in [star_name, hd_name, hip_name]:
+    for name in [star.name, hd_name, hip_name]:
         name = name.replace(" ", "")
         print(
-            f'[INFO] Trying to find DACE ID for star {star_name} with name {name}...')
+            f'[INFO] Trying to find DACE ID for star {star.name} with name {name}...')
         try:
             filter = {
                 'obj_id_catname': {
@@ -68,9 +88,9 @@ def get_dace_id(star_name):
             return dace_id
         except Exception as e:
             print(
-                f'Could not find dace ID for star {star_name} with HD name {name}. Trying other name...')
+                f'Could not find dace ID for star {star.name} with HD name {name}. Trying other name...')
     raise ValueError(
-        f'Could not find DACE ID for star {star_name} with any known name.')
+        f'Could not find DACE ID for star {star.name} with any known name.')
 
 
 def mad_clip(data, threshold=5, n_iter=3):
