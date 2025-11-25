@@ -16,7 +16,6 @@ def secular_acceleration(pmra, pmdec, parallax):
 
     # correct vt formula (numeric, then attach units)
     vt = 4.74047 * (pm/parallax).value * u.km/u.s
-    print(vt)
     # secular acceleration in m/s/yr
     dvdt = (vt**2 / d_pc).to(u.m/u.s/u.yr)
 
@@ -47,3 +46,31 @@ def apply_secular_correction(star_name, jd, rv, jd_ref=None):
     correction = dvdt.value * years  # m/s
 
     return rv - correction
+
+
+def get_latest_pipeline(ins_name, pipelines):
+    from .config import accepted_pipelines
+    """
+    Get the latest pipeline version for a given instrument.
+
+    Args:
+        ins_name (str): Instrument name.
+        pipelines (list of str): List of pipeline versions. 
+    Returns:
+        str: Latest pipeline version for the instrument.
+    """
+    if ins_name not in accepted_pipelines:
+        print(
+            f"[WARN] No accepted pipelines found for instrument {ins_name}, keeping {pipelines}.")
+        return pipelines
+    accepted_ = [c for c in pipelines if accepted_pipelines[ins_name] in c]
+    if len(accepted_) != 0:
+
+        print(
+            f"[INFO] Accepted pipeline for {ins_name}: {accepted_}")
+        return accepted_
+
+    else:
+        print(
+            f"[WARN] Accepted pipeline {accepted_pipelines[ins_name]} not found for instrument {ins_name}, keeping {pipelines}.")
+        return pipelines

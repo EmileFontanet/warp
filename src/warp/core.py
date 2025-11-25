@@ -5,11 +5,14 @@ from .hipparcos import get_hip_id, query_hip_photometry
 from .stats import mad_clip_mask, weighted_mean
 from .tseries import gls_periodogram
 import pandas as pd
+from .config import accepted_pipelines
+import numpy as np
 
 
 class Star:
     def __init__(self, name=None, instrument=None, load_rv=True, load_tess=False, max_erv=30,
-                 do_adjust_means=True, do_secular_corr=True, skip_ndrs=True, keep_bad_qc=False, verbose=True):
+                 do_adjust_means=True, do_secular_corr=True, skip_ndrs=True, keep_bad_qc=False, verbose=True,
+                 filter_pipeline=True, filter_columns=True):
         self.name = name
         self.instrument = instrument
         self.max_erv = max_erv
@@ -21,9 +24,11 @@ class Star:
         self.bad_points = pd.DataFrame()
         if name is not None and load_rv:
             print('loading rv data...')
-            self.load_rv()
+            self.load_rv(filter_columns=filter_columns,
+                         filter_pipeline=filter_pipeline)
             if self.do_adjust_means:
                 self.adjust_means(verbose=verbose)
+
         self.ids = {}
         self.coords = None
         self.gaia = None
@@ -32,23 +37,47 @@ class Star:
         return
 
     def load_ids(self):
+        from .simbad import get_ids
+        self.ids = get_ids(self.name)
         return
 
-    def load_gaia(self):
-        pass
-
-    def load_rv(self):
+    def load_rv(self, filter_columns=True,
+                filter_pipeline=True):
         self.rv_data = dace.download_points(
             self,
             instrument=self.instrument,
             do_secular_corr=self.do_secular_corr,
             skip_ndrs=self.skip_ndrs
         )
+        if filter_columns:
+            self.filter_columns()
+        if filter_pipeline:
+            self.filter_pipeline()
         if not self.keep_bad_qc:
             self.remove_condition(self.rv_data.spectro_drs_qc == False,
                                   origin='drs_qc')
         self.remove_condition(self.rv_data.spectro_ccf_rv_err > self.max_erv,
                               origin=f"rv_err_gt_{self.max_erv}")
+
+    def filter_pipeline(self):
+        from .utils import get_latest_pipeline
+        if self.rv_data is None:
+            print("[WARN] No RV data loaded, cannot filter pipelines.")
+            return
+        for ins in self.ins.unique():
+            accepted_pipeline = get_latest_pipeline(
+                ins, self.rv_data[self.ins == ins]['ins_drs_version'].unique())
+            rejected_mask = (self.ins == ins) & (
+                ~self.rv_data['ins_drs_version'].isin(accepted_pipeline))
+            self.rv_data = self.rv_data[~rejected_mask].copy()
+        return
+
+    def filter_columns(self):
+        from .config import ignored_cols
+        kept_cols = [col for col in self.rv_data.columns if
+                     not any(c in col for c in ignored_cols)]
+        self.rv_data = self.rv_data[kept_cols].copy()
+        return
 
     def compute_periodogram(self, min_period=None, max_period=None):
         if self.did_adjust_means is False:
@@ -65,12 +94,6 @@ class Star:
                                                         min_freq=min_freq,
                                                         max_freq=max_freq)
         return freq, power, best_period, fap
-
-    def load_lc(self):
-        pass
-
-    def load_planets(self):
-        pass
 
     def load_hip_photometry(self):
         if not hasattr(self, 'hip'):
@@ -138,6 +161,12 @@ class Star:
         # keep only remaining rows
         self.rv_data = self.rv_data[~condition].reset_index(drop=True)
 
+    def plot_rv(self, save_fig=False, **kwargs):
+        from .plotting import plot_rv
+        plot_rv(self.rv_data, star_name=self.name,
+                save_fig=save_fig, **kwargs)
+        return
+
     @property
     def rv(self):
         return self.rv_data.spectro_ccf_rv if self.rv_data is not None else None
@@ -149,3 +178,7 @@ class Star:
     @property
     def t(self):
         return self.rv_data.obj_date_bjd if self.rv_data is not None else None
+
+    @property
+    def ins(self):
+        return self.rv_data.ins_name if self.rv_data is not None else None

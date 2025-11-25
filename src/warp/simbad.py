@@ -23,11 +23,16 @@ def query_simbad(name):
     pmdec = result["pmdec"][0] * u.mas/u.yr
     plx = result["plx_value"][0] * u.mas
     rv = result["rvz_radvel"][0] * u.km/u.s
-
     return {
         "coord": coord,
         "pmra": pmra,
         "pmdec": pmdec,
         "parallax": plx,
         "rv": rv,
+        "source": 'simbad'
     }
+
+
+def get_ids(star):
+    result_table = Simbad.query_objectids(star)
+    return [result_table['id'][i] for i in range(len(result_table))]

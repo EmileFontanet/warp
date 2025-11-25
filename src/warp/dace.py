@@ -61,19 +61,23 @@ def download_points(star, instrument=None, do_secular_corr=True,
 
 def get_dace_id(star):
     result_table = Simbad.query_objectids(star.name)
+    names = [star.name]
     try:
         hd_name = [id for id in result_table['id'] if id.startswith('HD')][0]
         star.hd = hd_name
+        names.append(hd_name)
     except IndexError:
         star.hd = None
         print('[WARN] No HD name found for this star.')
     try:
         hip_name = [id for id in result_table['id'] if id.startswith('HIP')][0]
         star.hip = hip_name
+        names.append(hip_name)
     except IndexError:
         star.hip = None
         print('[WARN] No HIP name found for this star.')
-    for name in [star.name, hd_name, hip_name]:
+    all_names = names + list(result_table['id'].data)
+    for name in all_names:
         name = name.replace(" ", "")
         print(
             f'[INFO] Trying to find DACE ID for star {star.name} with name {name}...')
