@@ -12,7 +12,7 @@ import numpy as np
 class Star:
     def __init__(self, name=None, instrument=None, load_rv=True, load_tess=False, max_erv=30,
                  do_adjust_means=True, do_secular_corr=True, skip_ndrs=True, keep_bad_qc=False, verbose=True,
-                 filter_pipeline=True, filter_columns=True):
+                 filter_pipeline=True, filter_columns=True, remove_negativ_erv=True):
         self.name = name
         self.instrument = instrument
         self.max_erv = max_erv
@@ -25,7 +25,8 @@ class Star:
         if name is not None and load_rv:
             print('loading rv data...')
             self.load_rv(filter_columns=filter_columns,
-                         filter_pipeline=filter_pipeline)
+                         filter_pipeline=filter_pipeline,
+                         remove_negativ_erv=remove_negativ_erv)
             if self.do_adjust_means:
                 self.adjust_means(verbose=verbose)
 
@@ -42,13 +43,15 @@ class Star:
         return
 
     def load_rv(self, filter_columns=True,
-                filter_pipeline=True):
+                filter_pipeline=True,
+                remove_negativ_erv=True):
         self.rv_data = dace.download_points(
             self,
             instrument=self.instrument,
             do_secular_corr=self.do_secular_corr,
             skip_ndrs=self.skip_ndrs
         )
+        self.rv_data = self.rv_data.sort_values(by='obj_date_bjd')
         if filter_columns:
             self.filter_columns()
         if filter_pipeline:
@@ -58,6 +61,9 @@ class Star:
                                   origin='drs_qc')
         self.remove_condition(self.rv_data.spectro_ccf_rv_err > self.max_erv,
                               origin=f"rv_err_gt_{self.max_erv}")
+        if remove_negativ_erv:
+            self.remove_condition(self.rv_data.spectro_ccf_rv_err <= 0,
+                                  origin='negative_rv_err')
 
     def filter_pipeline(self):
         from .utils import get_latest_pipeline
@@ -80,6 +86,16 @@ class Star:
         return
 
     def compute_periodogram(self, min_period=None, max_period=None):
+        """Computes the periodogram of the RV time series
+
+        Args:
+            min_period (float, optional): The minimum period in days. Defaults to None.
+            max_period (float, optional): The maximum period in days. Defaults to None.
+
+        Returns:
+            Tuple: Returns a tuple (freq, power, best_period, fap) containing the frequency array,
+                   power spectrum, best period, and false alarm probability of the highest peak.
+        """
         if self.did_adjust_means is False:
             print(
                 "[WARN] Means have not been adjusted yet. Consider adjusting means before computing periodogram.")
@@ -104,14 +120,15 @@ class Star:
         self.hip_photometry = query_hip_photometry(hip_number=self.hip[4:])
         return self.hip_photometry
 
-    def clip_rv(self, threshold=5, n_iter=3, verbose=False):
+    def clip_rv(self, threshold=5, n_iter=3, groups='ins_name', verbose=True):
         if not hasattr(self, 'rv_data'):
             print("[WARN] No RV data loaded, cannot perform MAD clipping.")
             return
         mask = mad_clip_mask(
-            self.rv, groups=self.rv_data.ins_name, threshold=threshold, n_iter=n_iter,
+            self.rv, groups=self.rv_data[groups], threshold=threshold, n_iter=n_iter,
             verbose=verbose)
-        self.remove_condition(~mask, origin=f'rv_mad_clip_{threshold}sigma')
+        self.remove_condition(
+            ~mask, origin=f'rv_mad_clip_{threshold}sigma', verbose=verbose)
         # self.rv_data = self.rv_data[mask].copy()
         return
 
@@ -163,8 +180,21 @@ class Star:
 
     def plot_rv(self, save_fig=False, **kwargs):
         from .plotting import plot_rv
-        plot_rv(self.rv_data, star_name=self.name,
-                save_fig=save_fig, **kwargs)
+        fig, ax = plot_rv(self.rv_data, star_name=self.name,
+                          save_fig=save_fig, **kwargs)
+        return fig, ax
+
+    def bin_by_night(self, group_cols=['date_night', 'ins_name'], exclude_cols=None, verbose=True):
+        from .tseries import bin_by_night
+        from .config import exclude_cols_bin_by_night
+        if exclude_cols is None:
+            exclude_cols = exclude_cols_bin_by_night
+        self.rv_data = bin_by_night(
+            self.rv_data,
+            group_cols=group_cols,
+            exclude_cols=exclude_cols,
+            verbose=verbose
+        )
         return
 
     @property
@@ -182,3 +212,27 @@ class Star:
     @property
     def ins(self):
         return self.rv_data.ins_name if self.rv_data is not None else None
+
+    @property
+    def n_points(self):
+        return len(self.rv_data) if self.rv_data is not None else 0
+
+    @property
+    def rms(self):
+        return np.std(self.rv) if self.rv_data is not None else None
+
+    @property
+    def tspan(self):
+        return self.t.max() - self.t.min() if self.rv_data is not None else None
+
+    @property
+    def mean(self):
+        return np.mean(self.rv) if self.rv_data is not None else None
+
+    @property
+    def wmean(self):
+        return weighted_mean(self.rv, self.rv_err)[0] if self.rv_data is not None else None
+
+    @property
+    def median(self):
+        return np.median(self.rv) if self.rv_data is not None else None

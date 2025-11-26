@@ -41,6 +41,8 @@ def download_points(star, instrument=None, do_secular_corr=True,
         filters=filters,
         output_format='pandas',
     )
+    if results is None or len(results) == 0:
+        raise ValueError(f"No data found for star {star.name} in DACE.")
     if (do_secular_corr):
         print("[INFO] Applying secular acceleration correction...")
         results['spectro_ccf_rv'] = apply_secular_correction(

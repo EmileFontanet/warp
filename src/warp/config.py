@@ -28,3 +28,11 @@ ignored_cols = [
     'ins3_adc',
     'ins4_adc'
 ]
+exclude_cols_bin_by_night = [
+    'flux',
+    'texp',
+    'drift',
+    'berv',
+    'airmass',
+    'continuum'
+]

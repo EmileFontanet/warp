@@ -66,7 +66,3 @@ def weighted_mean(values, errors):
     mean = np.sum(values * weights) / np.sum(weights)
     mean_error = np.sqrt(1 / np.sum(weights))
     return mean, mean_error
-
-
-def bin_data():
-    pass

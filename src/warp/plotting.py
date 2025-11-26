@@ -10,6 +10,9 @@ ins_colors = {
     'NIRPS': 'tab:pink',
     'ESPRESSO19': 'tab:gray',
     'ESPRESSO18': 'tab:olive',
+    'CORALIE07-NDRS': 'gold',
+    'CORALIE14-NDRS': 'darkblue',
+    'CORALIE24-NDRS': 'mediumaquamarine',
     'default': 'tab:cyan'
 }
 
@@ -30,5 +33,5 @@ def plot_rv(rv_data, star_name=None, save_fig=False, **kwargs):
     ax.grid(alpha=0.3)
     if save_fig:
         fig.savefig(f"{star_name}_rv.png", dpi=300)
-    plt.show()
+    plt.show(block=False)
     return fig, ax
