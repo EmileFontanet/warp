@@ -6,3 +6,4 @@
 .env
 *.egg-info/
 test.py
+server_config.py

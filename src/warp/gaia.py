@@ -1,12 +1,17 @@
 from astroquery.gaia import Gaia
 from astropy.coordinates import SkyCoord
 from astropy import units as u
+import logging
 
 
-def query_gaia(name, radius=2.0*u.arcsec):
+def query_gaia(name, radius=2.0*u.arcsec, verbose=True):
     coord = SkyCoord(name) if isinstance(
         name, str) and ',' in name else SkyCoord.from_name(name)
     j = Gaia.cone_search_async(coord, radius=radius).get_results()
+    if verbose is False:
+        logging.getLogger('astroquery.utils.tap.core').setLevel(logging.ERROR)
+        logging.getLogger('astroquery.utils.tap').setLevel(logging.ERROR)
+        logging.getLogger('astroquery').setLevel(logging.ERROR)
     if len(j) > 0:
         # pick best (smallest angular separation / best RUWE)
         row = j[0]
