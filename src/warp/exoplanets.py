@@ -24,11 +24,12 @@ def fetch_nasa_archive(table='ps', only_default=True, columns=['pl_name'], param
         query = f"SELECT+{columns}+FROM+{table}+where"
 
     else:
-        query = f"SELECT+*+FROM+{table}+where"
+        query = f"SELECT+pl_name+FROM+{table}+where"
 
     if only_default:
         query += "+default_flag=1&"
-
+    else:
+        query += "+1=1&"
     if params is not None:
         for key, value in params.items():
             query += f"+{key}='{value}'+&"
@@ -55,3 +56,20 @@ def get_columns(table='ps'):
     response.raise_for_status()
     df = pd.DataFrame(response.json())
     return df
+
+
+def is_planet_published(pl_name):
+    """
+    Check if a planet is published in the NASA Exoplanet Archive.
+
+    Args:
+        pl_name (str): Name of the planet.
+    Returns:
+        list containing the pl parameters and refs if the planet is published, False otherwise.
+        """
+    all_planets = fetch_nasa_archive(
+        columns=['pl_name', 'pl_orbper', 'pl_refname'], only_default=False)
+    planet_data = all_planets[all_planets['pl_name'] == pl_name]
+    if len(planet_data) == 0:
+        return False
+    return planet_data

@@ -11,7 +11,7 @@ accepted_pipelines = {
 
 }
 ignored_cols = [
-    'obj_pos',
+    # 'obj_pos',
     'pub_bibcode',
     'pub_ref',
     'db_spectrum',

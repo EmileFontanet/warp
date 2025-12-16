@@ -1,10 +1,11 @@
-from astroquery.gaia import Gaia
 from astropy.coordinates import SkyCoord
 from astropy import units as u
 import logging
 
 
 def query_gaia(name, radius=2.0*u.arcsec, verbose=True):
+    from astroquery.gaia import Gaia
+
     coord = SkyCoord(name) if isinstance(
         name, str) and ',' in name else SkyCoord.from_name(name)
     j = Gaia.cone_search_async(coord, radius=radius).get_results()

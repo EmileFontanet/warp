@@ -3,7 +3,6 @@ import logging
 import os
 import numpy as np
 from dace_query.spectroscopy import Spectroscopy
-from astroquery.simbad import Simbad
 from .utils import apply_secular_correction
 import os
 
@@ -19,7 +18,10 @@ def download_files(file_list, file_type='all', save_dir='', extract=True, verbos
         extract (bool, optional): Whether to extract the downloaded files or not. Defaults to True.
         verbose (bool, optional): Defaults to True.
     """
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
     import tarfile
+    file_type = file_type.lower()
     if isinstance(file_list, str):
         file_list = [file_list]
     Spectroscopy.download_files(
@@ -94,6 +96,8 @@ def download_points(star, instrument=None, do_secular_corr=True,
 
 
 def get_dace_id(star, verbose=True):
+    from astroquery.simbad import Simbad
+
     result_table = Simbad.query_objectids(star.name)
     names = [star.name]
     try:

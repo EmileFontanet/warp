@@ -240,6 +240,41 @@ class Star:
         )
         return
 
+    def fit_keplerian(self, N_pla=3, n_lin=1, stellar_jitter=0, fap_threshold=1e-3, periods_init=[]):
+        from .kepmodel_wrapper import fit_keplerian
+        self.rv_model = fit_keplerian(
+            self.t.values,
+            self.rv.values,
+            self.rv_err.values,
+            self.ins,
+            N_pla=N_pla,
+            n_lin=n_lin,
+            stellar_jitter=stellar_jitter,
+            fap_threshold=fap_threshold,
+            periods_init=periods_init
+        )
+        return self.rv_model
+
+    def plot_keplerian_fit(self, ins_list=None, ax=None, fig=None, save_fig=False, show_plot=False, **kwargs):
+        from .plotting import plot_rv_keplerian_fit
+        if not hasattr(self, 'rv_model'):
+            raise ValueError("No rv_model found. Fit a Keplerian model first.")
+        if ins_list is not None:
+            rv_data = self.rv_data[self.rv_data.ins_name.isin(ins_list)]
+        else:
+            rv_data = self.rv_data
+        fig, ax = plot_rv_keplerian_fit(
+            rv_data,
+            self.rv_model,
+            ax=ax,
+            fig=fig,
+            star_name=self.name,
+            save_fig=save_fig,
+            show_plot=show_plot,
+            **kwargs
+        )
+        return fig, ax
+
     @property
     def rv(self):
         return self.rv_data.spectro_ccf_rv if self.rv_data is not None else None

@@ -1,10 +1,11 @@
 import requests as rq
 from bs4 import BeautifulSoup as bs
-from astroquery.simbad import Simbad
 import pandas as pd
 
 
 def get_hip_id(star_name):
+    from astroquery.simbad import Simbad
+
     print(f"[INFO] Retrieving HIP ID for star: {star_name}")
     result_table = Simbad.query_objectids(star_name)
     hip_name = [id for id in result_table['id'] if id.startswith('HIP')][0]

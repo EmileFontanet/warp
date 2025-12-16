@@ -8,8 +8,8 @@ from getpass import getpass
 
 def build_server_path(raw_file, file_type='CCF'):
     split_f = raw_file.split('/')
-    instrument = split_f[0].upper()
     drs = split_f[1]
+    instrument = split_f[0].upper() if '3.0.1' in drs else 'CORALIE14'
     drs = drs+'-DEV' if '3.0.1' in drs else drs
     path = f"/data/{instrument}DRS/{drs}/{split_f[2]}/{split_f[3]}/{split_f[4]}"
     if file_type.lower() == 'ccf':
@@ -134,50 +134,3 @@ def open_connection(jump_host, final_host, user, jump_password, final_password, 
     sftp = final_client.open_sftp()
 
     return jump_client, final_client, sftp
-
-
-# remote_files = ndrs_path + old_drs_path
-# local_dir = "data/"  # local destination folder
-
-# # --- Ensure local directory exists ---
-# os.makedirs(local_dir, exist_ok=True)
-
-# # --- Connect to jump host (A) ---
-# jump_client = paramiko.SSHClient()
-# jump_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-# jump_client.connect(jump_host, username=user, password=jump_password)
-
-# # --- Open tunnel from A to B ---
-# jump_transport = jump_client.get_transport()
-# dest_addr = (final_host, 22)
-# local_addr = (jump_host, 22)
-# channel = jump_transport.open_channel("direct-tcpip", dest_addr, local_addr)
-
-# # --- Connect to final host (B) through tunnel ---
-# final_client = paramiko.SSHClient()
-# final_client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-# final_client.connect(final_host, username=user,
-#                      password=final_password, sock=channel)
-
-# # --- Open SFTP session to B ---
-# sftp = final_client.open_sftp()
-
-# # # --- Download files ---
-# for remote_path in remote_files:
-#     basename = os.path.basename(remote_path)
-#     local_path = remote_path.replace('/data/CORALIE14DRS/', 'data/good/')
-#     local_path = local_path.replace('/reduced/', '/')
-#     if not os.path.exists(os.path.dirname(local_path)):
-#         os.makedirs(os.path.dirname(local_path), exist_ok=True)
-#     if (os.path.exists(local_path)):
-#         print(f"File {local_path} already exists. Skipping download.")
-#         continue
-#     print(f"Downloading {remote_path} → {local_path}")
-#     sftp.get(remote_path, local_path)
-#     print(f"✅ Downloaded {basename} to {local_path}")
-
-# # --- Cleanup ---
-# sftp.close()
-# final_client.close()
-# jump_client.close()
-# print("✅ All files downloaded successfully!")
