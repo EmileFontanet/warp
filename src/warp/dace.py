@@ -4,6 +4,7 @@ import os
 import numpy as np
 from dace_query.spectroscopy import Spectroscopy
 from .utils import apply_secular_correction
+
 import os
 
 
@@ -43,6 +44,7 @@ def download_files(file_list, file_type='all', save_dir='', extract=True, verbos
 
 def download_points(star, instrument=None, do_secular_corr=True,
                     skip_ndrs=True, verbose=True):
+    from .simbad import query_simbad_oid
     """
     Download old and new DRS data for the specified star.
     Args:
@@ -56,10 +58,12 @@ def download_points(star, instrument=None, do_secular_corr=True,
                        '2023-12-02']  # List of nights to exclude, if any
     if verbose:
         print(f"[INFO] Downloading data for star: {star.name}")
-    dace_id = get_dace_id(star, verbose=verbose)
+    dace_id = get_dace_id(star, verbose=verbose,
+                          instrument=instrument, skip_ndrs=skip_ndrs)
+    oid, main_id = query_simbad_oid(star.name)
     filters = {
         'obj_id_daceid': {
-            'equal': [dace_id]
+            'equal': [dace_id, star.name, oid, main_id]
         },
         'ins_name': {
             'contains': instrument
@@ -95,7 +99,7 @@ def download_points(star, instrument=None, do_secular_corr=True,
     return results
 
 
-def get_dace_id(star, verbose=True):
+def get_dace_id(star, verbose=True, skip_ndrs=True, instrument=None):
     from astroquery.simbad import Simbad
 
     result_table = Simbad.query_objectids(star.name)
@@ -110,7 +114,7 @@ def get_dace_id(star, verbose=True):
     try:
         hip_name = [id for id in result_table['id'] if id.startswith('HIP')][0]
         star.hip = hip_name
-        names.append(hip_name)
+        names.insert(0, hip_name)
     except IndexError:
         star.hip = None
         print('[WARN] No HIP name found for this star.')
@@ -124,11 +128,17 @@ def get_dace_id(star, verbose=True):
             filter = {
                 'obj_id_catname': {
                     'equal': [name]
-                }
+                },
+                'ins_name': {
+                    'contains': instrument}
             }
+            if (skip_ndrs):
+                filter['ins_name']['notContains'] = ['NDRS']
             with silence_dace_and_stdio():
                 results = Spectroscopy.query_database(filters=filter, limit=10)
             dace_id = results['obj_id_daceid'][results['obj_id_catname'] == name][0]
+            if verbose:
+                print(f'[INFO] Found DACE ID: {dace_id}')
             return dace_id
         except Exception as e:
             if verbose:

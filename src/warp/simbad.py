@@ -14,12 +14,11 @@ def query_simbad(name, verbose=True):
         logging.getLogger('astroquery').setLevel(logging.ERROR)
     Simbad.reset_votable_fields()
     Simbad.add_votable_fields('pmra', 'pmdec', 'ra',
-                              'dec', 'plx_value', 'rvz_radvel')
+                              'dec', 'plx_value', 'rvz_radvel', 'oid', 'main_id')
 
     result = Simbad.query_object(name)
     if result is None:
         raise ValueError(f"SIMBAD could not find object: {name}")
-
     # ra(d) and dec(d) are both in degrees
     ra = result["ra"][0]
     dec = result["dec"][0]
@@ -35,7 +34,9 @@ def query_simbad(name, verbose=True):
         "pmdec": pmdec,
         "parallax": plx,
         "rv": rv,
-        "source": 'simbad'
+        "source": 'simbad',
+        "main_id": result['main_id'][0],
+        "oid": result['oid'][0],
     }
 
 
@@ -44,3 +45,14 @@ def get_ids(star):
 
     result_table = Simbad.query_objectids(star)
     return [result_table['id'][i] for i in range(len(result_table))]
+
+
+def query_simbad_oid(name):
+    from astroquery.simbad import Simbad
+    Simbad.reset_votable_fields()
+    Simbad.add_votable_fields('oid', 'main_id')
+
+    result = Simbad.query_object(name)
+    if result is None:
+        raise ValueError(f"SIMBAD could not find object: {name}")
+    return str(result['oid'][0]), result['main_id'][0]

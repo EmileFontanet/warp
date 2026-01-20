@@ -39,6 +39,7 @@ class Star:
         self.skip_ndrs = skip_ndrs
         self.keep_bad_qc = keep_bad_qc
         self.did_adjust_means = False
+        self.did_secular_corr = False
         self.bad_points = pd.DataFrame()
         if name is not None and load_rv:
             self.load_rv(filter_columns=filter_columns,
@@ -48,10 +49,6 @@ class Star:
                 self.adjust_means(verbose=verbose)
 
         self._ids = None
-        self.coords = None
-        self.gaia = None
-        self.lc = None
-        self.planets = None
         return
 
     def load_ids(self):
@@ -240,7 +237,7 @@ class Star:
         )
         return
 
-    def fit_keplerian(self, N_pla=3, n_lin=1, stellar_jitter=0, fap_threshold=1e-3, periods_init=[]):
+    def fit_keplerian(self, N_pla=3, n_lin=1, stellar_jitter=0, fap_threshold=1e-3, periods_init=[], fix_cor_offsets=False):
         from .kepmodel_wrapper import fit_keplerian
         self.rv_model = fit_keplerian(
             self.t.values,
@@ -251,7 +248,8 @@ class Star:
             n_lin=n_lin,
             stellar_jitter=stellar_jitter,
             fap_threshold=fap_threshold,
-            periods_init=periods_init
+            periods_init=periods_init,
+            fix_cor_offsets=fix_cor_offsets
         )
         return self.rv_model
 

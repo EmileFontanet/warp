@@ -33,6 +33,8 @@ def plot_rv(rv_data, ax=None, fig=None, star_name=None, save_fig=False, show_plo
     ax.set_ylabel('Radial Velocity [m/s]')
     ax.legend()
     ax.grid(alpha=0.3)
+    ax.set_title(
+        f'Radial Velocity Measurements for {star_name}' if star_name else "Radial Velocity Measurements")
     if save_fig and fig is not None:
         fig.savefig(f"{star_name}_rv.png", dpi=300)
     if show_plot:
@@ -48,8 +50,13 @@ def plot_rv_keplerian_fit(rv_data, rv_model, ax=None, fig=None, star_name=None,
     for ins in rv_data['ins_name'].unique():
         ins_mask = rv_data['ins_name'] == ins
         color = ins_colors.get(ins, ins_colors['default'])
-        offset = rv_model.get_param(
-            f"lin.{ins}_offset") if f"lin.{ins}_offset" in rv_model.fit_param else 0.0
+        if f"lin.{ins}_offset" in rv_model.fit_param:
+            offset = rv_model.get_param(
+                f"lin.{ins}_offset")
+        elif hasattr(rv_model, 'fixed_offsets') and ins in rv_model.fixed_offsets:
+            offset = rv_model.fixed_offsets[ins]
+        else:
+            offset = 0.0
         if date_format == 'datetime':
             time_vals = pd.to_datetime(rv_data.loc[ins_mask, 'date_night'])
             ax.set_xlabel('Time [d]')
@@ -64,14 +71,23 @@ def plot_rv_keplerian_fit(rv_data, rv_model, ax=None, fig=None, star_name=None,
     # Plot model
     time_grid = np.linspace(np.min(rv_data['obj_date_bjd']),
                             np.max(rv_data['obj_date_bjd']), 5000)
-    model_rv = rv_model.keplerian_model(time_grid)
+    model_rv = rv_model.keplerian_model(
+        time_grid-np.median(rv_data['obj_date_bjd']))
     if date_format == 'datetime':
         time_grid = pd.date_range(start=pd.to_datetime(rv_data['date_night']).min(),
                                   end=pd.to_datetime(
                                       rv_data['date_night']).max(),
                                   periods=5000)
-    ax.plot(time_grid, model_rv, color='black', lw=2, label='Keplerian Fit')
-
+    drift_pow = len([c for c in rv_model.fit_param if 'drift_pow' in c])
+    drift = np.zeros_like(time_grid)
+    for k in range(drift_pow):
+        drift += rv_model.get_param(
+            f"lin.drift_pow{k+1}") * (time_grid - np.median(rv_data['obj_date_bjd']))**(k+1)
+    ax.plot(time_grid, model_rv + drift,
+            color='black', lw=2, label='Keplerian Fit')
+    ax.plot(time_grid, drift, color='gray',
+            lw=1, ls='--', label=f'Degree {drift_pow} Drift')
+    # Need to add drift as well if present
     ax.set_ylabel('$\Delta$ RV [m/s]')
     ax.legend()
     ax.grid(alpha=0.3)

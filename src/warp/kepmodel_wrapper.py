@@ -17,8 +17,16 @@ default_inst_jitter = {
 
 }
 
+offsets_relative_to_cor14 = {
+    'CORALIE98': -25,
+    'CORALIE07': -25,
+    'CORALIE24': -10,
+    'CORALIE14': 0,
+}
 
-def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=1, stellar_jitter=0, fap_threshold=1e-3, periods_init=[]):
+
+def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=1, stellar_jitter=0, fap_threshold=1e-3, periods_init=[],
+                  fix_cor_offsets=False):
     instjit = {}
     for inst in instruments.unique():
         sig = default_inst_jitter.get(
@@ -26,17 +34,40 @@ def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=1, stellar_
         instjit[f'{inst}_jit'] = term.InstrumentJitter(
             instruments == inst, sig)
     instjit['global_jitter'] = term.Jitter(stellar_jitter)
+    ref_epoch = np.median(time)
     rv_model = rv.RvModel(
-        time,
+        time - ref_epoch,
         rv_data,
         err=term.Error(rv_err),
         **instjit,
 
     )
-    for inst in instruments.unique():
-        rv_model.add_lin(instruments == inst,
-                         f'{inst}_offset',
-                         value=np.mean(rv_data[instruments == inst]),)
+    if (fix_cor_offsets == False or 'CORALIE14' not in instruments.values):
+        for inst in instruments.unique():
+            rv_model.add_lin(instruments == inst,
+                             f'{inst}_offset',
+                             value=np.mean(rv_data[instruments == inst]),)
+    else:
+        rv_model.fixed_offsets = {}
+        COR_mask = np.array(['COR' in c for c in instruments])
+        # We add a global CORALIE offset
+        rv_model.add_lin(COR_mask,
+                         f'rv_CORALIE_offset',
+                         value=np.mean(rv_data[COR_mask]))
+        for inst in instruments.unique():
+            # And then add offsets relative to COR14
+            if (inst != 'CORALIE14') and (inst in offsets_relative_to_cor14):
+                print(
+                    f"Fixing offset of {inst} relative to CORALIE14: {offsets_relative_to_cor14[inst]}")
+                rv_model.add_lin(instruments == inst,
+                                 f'rv_{inst}_offset',
+                                 fit=False,
+                                 value=offsets_relative_to_cor14[inst])
+                rv_model.fixed_offsets[inst] = offsets_relative_to_cor14[inst]
+            elif inst != 'CORALIE14':
+                rv_model.add_lin(instruments == inst,
+                                 f'rv_{inst}_offset',
+                                 value=np.mean(rv_data[instruments == inst]))
     rv_model.fit()
     for kpow in range(n_lin):
         rv_model.add_lin(rv_model.t ** (kpow + 1),
