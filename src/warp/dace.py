@@ -69,8 +69,8 @@ def download_points(star, instrument=None, do_secular_corr=True,
             'contains': instrument
         }
     }
-    if (skip_ndrs):
-        filters['ins_name']['notContains'] = ['NDRS']
+    # if (skip_ndrs):
+    #     filters['ins_name']['notContains'] = ['NDRS']
 
     results = Spectroscopy.query_database(
         filters=filters,
@@ -132,8 +132,8 @@ def get_dace_id(star, verbose=True, skip_ndrs=True, instrument=None):
                 'ins_name': {
                     'contains': instrument}
             }
-            if (skip_ndrs):
-                filter['ins_name']['notContains'] = ['NDRS']
+            # if (skip_ndrs):
+            #     filter['ins_name']['notContains'] = ['NDRS']
             with silence_dace_and_stdio():
                 results = Spectroscopy.query_database(filters=filter, limit=10)
             dace_id = results['obj_id_daceid'][results['obj_id_catname'] == name][0]

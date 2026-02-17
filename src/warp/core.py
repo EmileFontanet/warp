@@ -12,7 +12,7 @@ import numpy as np
 class Star:
     def __init__(self, name=None, instrument=None, load_rv=True, load_tess=False, max_erv=30,
                  do_adjust_means=True, do_secular_corr=True, skip_ndrs=True, keep_bad_qc=False, verbose=True,
-                 filter_pipeline=True, filter_columns=True, remove_negative_erv=True):
+                 filter_pipeline=True, filter_columns=True, remove_negative_erv=True, set_ndrs_as_ins=True):
         """A class instance representing a star. This object allows to download, visualize and analyse RV and 
         photometric data.
 
@@ -40,11 +40,13 @@ class Star:
         self.keep_bad_qc = keep_bad_qc
         self.did_adjust_means = False
         self.did_secular_corr = False
+        self.set_ndrs_as_ins = set_ndrs_as_ins
         self.bad_points = pd.DataFrame()
         if name is not None and load_rv:
             self.load_rv(filter_columns=filter_columns,
                          filter_pipeline=filter_pipeline,
-                         remove_negative_erv=remove_negative_erv, verbose=verbose)
+                         remove_negative_erv=remove_negative_erv, verbose=verbose,
+                         skip_ndrs=skip_ndrs, set_ndrs_as_ins=set_ndrs_as_ins)
             if self.do_adjust_means:
                 self.adjust_means(verbose=verbose)
 
@@ -58,19 +60,21 @@ class Star:
 
     def load_rv(self, filter_columns=True,
                 filter_pipeline=True,
-                remove_negative_erv=True, verbose=True):
+                remove_negative_erv=True, verbose=True,
+                skip_ndrs=True, set_ndrs_as_ins=True):
         self.rv_data = dace.download_points(
             self,
             instrument=self.instrument,
             do_secular_corr=self.do_secular_corr,
-            skip_ndrs=self.skip_ndrs,
+            skip_ndrs=skip_ndrs,
             verbose=verbose
         )
         self.rv_data = self.rv_data.sort_values(by='obj_date_bjd')
         if filter_columns:
             self.filter_columns()
         if filter_pipeline:
-            self.filter_pipeline(verbose=verbose)
+            self.filter_pipeline(
+                verbose=verbose, skip_ndrs=skip_ndrs, set_ndrs_as_ins=self.set_ndrs_as_ins)
         if not self.keep_bad_qc:
             self.remove_condition(self.rv_data.spectro_drs_qc == False,
                                   origin='drs_qc', verbose=verbose, adjust_means=False)
@@ -80,17 +84,24 @@ class Star:
             self.remove_condition(self.rv_data.spectro_ccf_rv_err <= 0,
                                   origin='negative_rv_err', verbose=verbose, adjust_means=False)
 
-    def filter_pipeline(self, verbose=True):
+    def filter_pipeline(self, verbose=True, skip_ndrs=True, set_ndrs_as_ins=True):
         from .utils import get_latest_pipeline
+        from .config import coralie_ndrs_pipelines
         if self.rv_data is None:
             print("[WARN] No RV data loaded, cannot filter pipelines.")
             return
         for ins in self.ins.unique():
             accepted_pipeline = get_latest_pipeline(
-                ins, self.rv_data[self.ins == ins]['ins_drs_version'].unique(), verbose=verbose)
+                ins, self.rv_data[self.ins == ins]['ins_drs_version'].unique(), verbose=verbose, skip_ndrs=skip_ndrs)
             rejected_mask = (self.ins == ins) & (
                 ~self.rv_data['ins_drs_version'].isin(accepted_pipeline))
             self.rv_data = self.rv_data[~rejected_mask].copy()
+        if set_ndrs_as_ins and not self.skip_ndrs:
+            for ins in self.ins.unique():
+                if 'COR' in ins:
+                    ndrs_mask = (self.ins == ins) & (
+                        self.rv_data['ins_drs_version'].isin(coralie_ndrs_pipelines))
+                    self.rv_data.loc[ndrs_mask, 'ins_name'] = ins + '-NDRS'
         return
 
     def filter_columns(self):
@@ -161,13 +172,15 @@ class Star:
             return
 
         for ins in ins_list:
-            ins_mask = self.rv_data.ins_name == ins
-            mean_rv, _ = weighted_mean(self.rv[ins_mask],
-                                       self.rv_err[ins_mask])
-            self.rv_data.loc[ins_mask, 'spectro_ccf_rv'] -= mean_rv
-            if verbose:
-                print(
-                    f"[INFO] Adjusted mean RV for instrument {ins} by subtracting {mean_rv:.3f} m/s.")
+            for drs in self.rv_data[self.rv_data.ins_name == ins]['ins_drs_version'].unique():
+                ins_mask = (self.rv_data.ins_name == ins) & (
+                    self.rv_data['ins_drs_version'] == drs)
+                mean_rv, _ = weighted_mean(self.rv[ins_mask],
+                                           self.rv_err[ins_mask])
+                self.rv_data.loc[ins_mask, 'spectro_ccf_rv'] -= mean_rv
+                if verbose:
+                    print(
+                        f"[INFO] Adjusted mean RV for instrument {ins} (DRS version {drs}) by subtracting {mean_rv:.3f} m/s.")
         self.did_adjust_means = True
         return
 
@@ -236,6 +249,15 @@ class Star:
             verbose=verbose
         )
         return
+
+    def remove_single_observations(self, verbose=True):
+        for ins in self.ins.unique():
+            if len(self.rv_data[self.rv_data.ins_name == ins]) == 1:
+                if verbose:
+                    print(
+                        f"[INFO] Removing single observation for instrument {ins}.")
+                self.remove_condition(
+                    self.rv_data.ins_name == ins, origin='single_observation', verbose=verbose, adjust_means=False)
 
     def fit_keplerian(self, N_pla=3, n_lin=1, stellar_jitter=0, fap_threshold=1e-3, periods_init=[], fix_cor_offsets=False):
         from .kepmodel_wrapper import fit_keplerian

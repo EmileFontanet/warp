@@ -43,7 +43,11 @@ def query_simbad(name, verbose=True):
 def get_ids(star):
     from astroquery.simbad import Simbad
 
-    result_table = Simbad.query_objectids(star)
+    try:
+        result_table = Simbad.query_objectids(star)
+    except Exception as e:
+        print('Could not retrieve SIMBAD IDs:', e)
+        return None
     return [result_table['id'][i] for i in range(len(result_table))]
 
 
@@ -51,8 +55,11 @@ def query_simbad_oid(name):
     from astroquery.simbad import Simbad
     Simbad.reset_votable_fields()
     Simbad.add_votable_fields('oid', 'main_id')
-
-    result = Simbad.query_object(name)
+    try:
+        result = Simbad.query_object(name)
+    except Exception as e:
+        print('Could not retrieve SIMBAD OID:', e)
+        return None
     if result is None:
         raise ValueError(f"SIMBAD could not find object: {name}")
     return str(result['oid'][0]), result['main_id'][0]

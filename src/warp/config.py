@@ -1,15 +1,16 @@
 accepted_pipelines = {
-    'CORALIE98': '3.3',
-    'CORALIE07': '3.4',
-    'CORALIE14': '3.8',
-    'CORALIE24': '3.8',
-    'HARPS03': '3.3.6',
-    'HARPS15': '3.3.6',
-    'NIRPS': '3.3.12',
-    'ESPRESSO19': '3.3.10',
-    'ESPRESSO18': '3.3.10',
+    'CORALIE98': ['3.3'],
+    'CORALIE07': ['3.4'],
+    'CORALIE14': ['3.8'],
+    'CORALIE24': ['3.8'],
+    'HARPS03': ['3.3.6'],
+    'HARPS15': ['3.3.6'],
+    'NIRPS': ['3.3.12'],
+    'ESPRESSO19': ['3.3.10'],
+    'ESPRESSO18': ['3.3.10'],
 
 }
+coralie_ndrs_pipelines = ['3.3.1', '3.3.12']
 ignored_cols = [
     # 'obj_pos',
     'pub_bibcode',

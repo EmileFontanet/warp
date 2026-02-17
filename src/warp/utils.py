@@ -60,8 +60,9 @@ def apply_secular_correction(star_name, jd, rv, jd_ref=None, verbose=True):
     return rv - correction
 
 
-def get_latest_pipeline(ins_name, pipelines, verbose=True):
+def get_latest_pipeline(ins_name, pipelines, verbose=True, skip_ndrs=True):
     from .config import accepted_pipelines
+    from .config import coralie_ndrs_pipelines
     """
     Get the latest pipeline version for a given instrument.
 
@@ -76,7 +77,11 @@ def get_latest_pipeline(ins_name, pipelines, verbose=True):
             print(
                 f"[WARN] No accepted pipelines found for instrument {ins_name}, keeping {pipelines}.")
         return pipelines
-    accepted_ = [c for c in pipelines if accepted_pipelines[ins_name] in c]
+    extra_drs = [] if skip_ndrs else coralie_ndrs_pipelines
+    accepted_ = [
+        c for c in pipelines if c in accepted_pipelines[ins_name] or c in extra_drs]
+
+    # accepted_ = [c for c in pipelines if accepted_pipelines[ins_name] in c]
     if len(accepted_) != 0:
         if verbose:
             print(

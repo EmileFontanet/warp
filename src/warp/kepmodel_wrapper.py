@@ -25,7 +25,7 @@ offsets_relative_to_cor14 = {
 }
 
 
-def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=1, stellar_jitter=0, fap_threshold=1e-3, periods_init=[],
+def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=0, stellar_jitter=0, fap_threshold=1e-3, periods_init=[],
                   fix_cor_offsets=False):
     instjit = {}
     for inst in instruments.unique():
@@ -42,6 +42,7 @@ def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=1, stellar_
         **instjit,
 
     )
+    rv_model.t0 = ref_epoch
     if (fix_cor_offsets == False or 'CORALIE14' not in instruments.values):
         for inst in instruments.unique():
             rv_model.add_lin(instruments == inst,
