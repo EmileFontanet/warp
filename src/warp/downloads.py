@@ -24,7 +24,7 @@ def build_server_path(raw_file, file_type='CCF'):
             path = path.replace('.fits', '_s1d_A.fits')
     elif file_type.lower() == 's2d':
         if '3.0.1' in drs:
-            path = path.replace('.fits', '_S2D_BLAZE_A.fits')
+            path = path.replace('.fits', '_S2D*_A.fits')
         else:
             path = path.replace('.fits', '_e2ds_A.fits')
     else:
@@ -75,7 +75,7 @@ def download_instrument_files(instrument, file_list=None, save_dir='data/', verb
     jump_client, final_client, sftp = open_connection(
         jump_host, host_ip, user, password, password, verbose=verbose)
     for remote_path in file_list:
-        if '3.0.1' not in remote_path:
+        if '3.0.1' not in remote_path or '*' in remote_path:
             # handle wildcards
             dir_path = os.path.dirname(remote_path)
             pattern = os.path.basename(remote_path)
@@ -89,21 +89,26 @@ def download_instrument_files(instrument, file_list=None, save_dir='data/', verb
                 print(
                     f"[WARN] No files matching {pattern} found in {dir_path}.")
                 continue
+            matched_files = [remote_path.replace(
+                pattern, c) for c in matched_files]
             remote_path = remote_path.replace(pattern, matched_files[0])
-        basename = os.path.basename(remote_path)
-        local_path = os.path.join(save_dir, instrument,
-                                  remote_path.split('/')[-2],
-                                  remote_path.split('/')[-1])
-        if not os.path.exists(os.path.dirname(local_path)):
-            os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        if (os.path.exists(local_path)):
-            print(f"File {local_path} already exists. Skipping download.")
-            continue
-        if verbose:
-            print(f"Downloading {remote_path} → {local_path}")
-        sftp.get(remote_path, local_path)
-        if verbose:
-            print(f"✅ Downloaded {basename} to {local_path}")
+        else:
+            matched_files = [remote_path]
+        for remote_path in matched_files:
+            basename = os.path.basename(remote_path)
+            local_path = os.path.join(save_dir, instrument,
+                                      remote_path.split('/')[-2],
+                                      remote_path.split('/')[-1])
+            if not os.path.exists(os.path.dirname(local_path)):
+                os.makedirs(os.path.dirname(local_path), exist_ok=True)
+            if (os.path.exists(local_path)):
+                print(f"File {local_path} already exists. Skipping download.")
+                continue
+            if verbose:
+                print(f"Downloading {remote_path} → {local_path}")
+            sftp.get(remote_path, local_path)
+            if verbose:
+                print(f"✅ Downloaded {basename} to {local_path}")
 
     sftp.close()
     final_client.close()

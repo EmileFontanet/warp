@@ -4,7 +4,7 @@ from .stats import weighted_mean
 import pandas as pd
 
 
-def gls_periodogram(t, y, yerr=None, min_freq=None, max_freq=None, samples=10000):
+def gls_periodogram(t, y, yerr=None, min_freq=None, max_freq=None, fap_level=1e-3, samples=10000):
 
     ls = LombScargle(t, y, yerr, center_data=True)
     if min_freq is None:
@@ -19,10 +19,11 @@ def gls_periodogram(t, y, yerr=None, min_freq=None, max_freq=None, samples=10000
     best_freq = freq[np.argmax(power)]
     best_period = 1 / best_freq
     fap = ls.false_alarm_probability(power.max())
-    return freq, power, best_period, fap
+    power_threshold = ls.false_alarm_level(fap_level)
+    return freq, power, best_period, fap, power_threshold
 
 
-def bin_by_night(rv_data, group_cols=['date_night', 'ins_name'], exclude_cols=None, verbose=True):
+def bin_by_night(rv_data, group_cols=['date_night', 'ins_name', 'ins_drs_version'], exclude_cols=None, verbose=True):
     if isinstance(group_cols, str):
         group_cols = [group_cols]
     kept_cols = [

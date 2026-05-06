@@ -6,6 +6,7 @@ default_inst_jitter = {
     'CORALIE98': 5.0,
     'CORALIE07': 8.0,
     'CORALIE14': 3.0,
+    'CORALIE24': 3.0,
     'CORAVEL': 150.0,
     'HARPS03': 0.75,
     'HARPS15': 0.75,
@@ -26,15 +27,21 @@ offsets_relative_to_cor14 = {
 
 
 def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=0, stellar_jitter=0, fap_threshold=1e-3, periods_init=[],
-                  fix_cor_offsets=False):
+                  fix_cor_offsets=False, verbose=True, fit_param=["P", "la0", "K", "sqrtesinw", "sqrtecosw"], fit_ins_jitter=False,
+                  ref_epoch=None, fit_stellar_jitter=False):
+    if isinstance(periods_init, int) or isinstance(periods_init, float):
+        periods_init = [periods_init]
     instjit = {}
     for inst in instruments.unique():
         sig = default_inst_jitter.get(
             inst, default_inst_jitter['default'])
         instjit[f'{inst}_jit'] = term.InstrumentJitter(
             instruments == inst, sig)
-    instjit['global_jitter'] = term.Jitter(stellar_jitter)
-    ref_epoch = np.median(time)
+    if stellar_jitter > 0 or fit_stellar_jitter:
+        instjit['stellar_jitter'] = term.Jitter(stellar_jitter)
+    if ref_epoch is None:
+        ref_epoch = np.median(time)
+
     rv_model = rv.RvModel(
         time - ref_epoch,
         rv_data,
@@ -58,8 +65,9 @@ def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=0, stellar_
         for inst in instruments.unique():
             # And then add offsets relative to COR14
             if (inst != 'CORALIE14') and (inst in offsets_relative_to_cor14):
-                print(
-                    f"Fixing offset of {inst} relative to CORALIE14: {offsets_relative_to_cor14[inst]}")
+                if (verbose):
+                    print(
+                        f"Fixing offset of {inst} relative to CORALIE14: {offsets_relative_to_cor14[inst]}")
                 rv_model.add_lin(instruments == inst,
                                  f'rv_{inst}_offset',
                                  fit=False,
@@ -70,11 +78,13 @@ def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=0, stellar_
                                  f'rv_{inst}_offset',
                                  value=np.mean(rv_data[instruments == inst]))
     rv_model.fit()
-    for kpow in range(n_lin):
-        rv_model.add_lin(rv_model.t ** (kpow + 1),
-                         f"drift_pow{kpow+1}", value=1)
-    rv_model.fit()
-
+    if fit_ins_jitter:
+        jitter_params = [f'cov.{key}.sig' for key in instjit]
+        rv_model.fit_param += jitter_params
+        rv_model.fit()
+    if fit_stellar_jitter:
+        rv_model.fit_param += ['cov.stellar_jitter.sig']
+        rv_model.fit()
     Pmax = 1.5*(np.max(time) - np.min(time))
     Pmin = 1.0
     nu0 = 2 * np.pi / Pmax
@@ -83,8 +93,12 @@ def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=0, stellar_
     for p in periods_init:
         rv_model.add_keplerian_from_period(p)
         rv_model.set_keplerian_param(
-            f"{rv_model.nkep-1}", param=["P", "la0", "K", "sqrtesinw", "sqrtecosw"]
+            f"{rv_model.nkep-1}", param=fit_param
         )
+        rv_model.fit()
+    for kpow in range(n_lin):
+        rv_model.add_lin(rv_model.t ** (kpow + 1),
+                         f"drift_pow{kpow+1}", value=0)
         rv_model.fit()
     for kpla in range(N_pla-len(periods_init)):
         # Compute periodogram
@@ -100,8 +114,9 @@ def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=0, stellar_
         # Add new planet
         rv_model.add_keplerian_from_period(P[kmax])
         rv_model.set_keplerian_param(
-            f"{rv_model.nkep-1}", param=["P", "la0", "K", "sqrtesinw", "sqrtecosw"]
+            f"{rv_model.nkep-1}", param=fit_param
         )
         # Global fit of the model
         rv_model.fit()
+    rv_model.fit()
     return rv_model

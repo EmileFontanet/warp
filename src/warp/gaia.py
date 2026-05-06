@@ -25,3 +25,13 @@ def query_gaia(name, radius=2.0*u.arcsec, verbose=True):
         if (parallax.value > 0) and (par_snr >= 3) and (ruwe is None or ruwe < 1.4):
             return dict(source='gaia', parallax=parallax, pmra=pmra, pmdec=pmdec, ruwe=ruwe)
     return None
+
+
+def query_gaia_photometry(gaia_id):
+    from astroquery.gaia import Gaia
+    job = Gaia.launch_job("""
+    SELECT source_id, ra, dec
+    FROM gaiadr3.gaia_source
+    WHERE source_id IN (...)
+    """)
+    sources = job.get_results()

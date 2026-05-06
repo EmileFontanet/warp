@@ -1,0 +1,106 @@
+J/A+A/657/A87    CASCADES I. Sample definition and first results (Ottoni+, 2022)
+================================================================================
+CORALIE radial-velocity search for companions around evolved stars (CASCADES)
+I. Sample definition and first results: Three new planets orbiting giant stars.
+    Ottoni G., Udry S., Segransan D., Buldgen G., Lovis C., Eggenberger P.,
+    Pezzotti C., Adibekyan V., Marmier M., Mayor M., Santos N.C., Sousa S.G.,
+    Lagarde N., Charbonnel C.
+    <Astron. Astrophys. 657, A87 (2022)>
+    =2022A&A...657A..87O        (SIMBAD/NED BibCode)
+================================================================================
+ADC_Keywords: Stars, double and multiple ; Exoplanets ; Stars, giant ;
+              Abundances, [Fe/H] ; Effective temperatures ; Magnitudes ;
+              Parallaxes, trigonometric ; Stars, masses
+Keywords: techniques: radial velocities - planets and satellites: detection -
+          (stars:) planetary systems -
+
+Abstract:
+    Following the first discovery of a planet orbiting a giant star in
+    2002, we started the CORALIE radial-velocity search for companions
+    around evolved stars (CASCADES). We present the observations of three
+    stars conducted at the 1.2m Leonard Euler Swiss telescope at La Silla
+    Observatory, Chile, using the CORALIE spectrograph.
+
+    We aim to detect planetary companions to intermediate-mass G- and K-
+    type evolved stars and perform a statistical analysis of this
+    population. We searched for new planetary systems around the stars
+    HD22532 (TIC200851704), HD64121 (TIC264770836), and HD69123
+    (TIC146264536). We have followed a volume-limited sample of 641 red
+    giants since 2006 to obtain high-precision radial-velocity
+    measurements. We used the Data & Analysis Center for Exoplanets (DACE)
+    platform to perform a radial-velocity analysis to search for periodic
+    signals in the line profile and activity indices, to distinguish
+    between planetary-induced radial-velocity variations and stellar
+    photospheric jitter, and to search for significant signals in the
+    radial-velocity time series to fit a corresponding Keplerian model.
+
+    In this paper, we present the survey in detail, and we report on the
+    discovery of the first three planets of the sample around the giant
+    stars HD22532, HD64121, and HD69123.
+
+Description:
+    Stellar parameters for the complete sample of the CASCADES survey,
+    from various sources (see Notes) and from the CASCADES I paper.
+
+File Summary:
+--------------------------------------------------------------------------------
+ FileName      Lrecl  Records   Explanations
+--------------------------------------------------------------------------------
+ReadMe            80        .   This file
+table2.dat       315      641   Stellar parameters for the complete sample
+--------------------------------------------------------------------------------
+
+See also:
+   I/239 : The Hipparcos and Tycho Catalogues (ESA 1997)
+   I/259 : The Tycho-2 Catalogue (Hog+ 2000)
+   I/345 : Gaia DR2 (Gaia Collaboration, 2018)
+   I/347 : Distances to 1.33 billion stars in Gaia DR2 (Bailer-Jones+, 2018)
+
+Byte-by-byte Description of file: table2.dat
+--------------------------------------------------------------------------------
+   Bytes Format Units     Label     Explanations
+--------------------------------------------------------------------------------
+   1-  6  I6    ---       HD        Henry Draper Identifier
+   8- 18  A11   ---       SpType    Spectral Type (1)
+  20- 26  F7.5  mag       Vmag      Magnitude (apparent) in V filter (2)
+  28- 38  F11.9 mag     e_Vmag      Uncertainty in Mag (apparent) V filter (2)
+  40- 46  F7.5  mag       B-V       Color (B-V) (2)
+  48- 58  F11.9 mag     e_B-V       Uncertainty in Color (B-V) (2)
+  60- 71  F12.9 mag       BC        ? Bolometric correction (3)
+  73- 83  F11.9 mag     e_BC        ? Uncertainty in Bolometric correction (3)
+  85- 91  F7.4  mas       plx       ? Parallax (4)
+  93- 98  F6.4  mas     e_plx       ? Uncertainty in parallax (4)
+ 100-111  F12.8 pc        Dist      ? Distance (5)
+ 113-124  F12.9 pc      e_Dist      ? Lower uncertainty in Distance (5)
+ 126-137  F12.9 pc      E_Dist      ? Upper uncertainty in Distance (5)
+ 139-150  F12.9 mag       VMAG      ? Absolute Magnitude in V filter
+ 152-162  F11.9 mag     e_VMAG      ? Uncertainty in Absolute Magnitude V filter
+ 164-169  F6.4  mag       BP-RP     ? Gaia color (Bp-Rp) (4)
+ 171-181  F11.9 mag     e_BP-RP     ? Uncertainty in Gaia color (Bp-Rp) (4)
+ 183-194  F12.9 mag       Gmag      ? Gaia magnitude in G filter (4)
+ 196-205  F10.8 mag     e_Gmag      ? Uncertainty in Gaia mag in G filter (4)
+ 207-210  I4    K         Teff      ? Effective Temperature
+ 212-214  I3    K       e_Teff      ? Uncertainty in Effective Temperature
+ 216-220  F5.3  [cm/s2]   logg      ? log of the Surface Gravity
+ 222-226  F5.3  [cm/s2] e_logg      ? Uncertainty in log of Surface Gravity
+ 228-233  F6.3  [-]       [Fe/H]    ? Metallicity
+ 235-239  F5.3  [-]     e_[Fe/H]    ? Uncertainty in Metallicity
+ 241-251  F11.9 Msun      Mass      ? Stellar mass
+ 253-263  F11.9 Msun    e_Mass      ? Uncertainty in Stellar mass
+ 265-277  F13.9 Lsun      Lum       ? Stellar Luminosity
+ 279-290  F12.9 Lsun    e_Lum       ? Uncertainty in Stellar Luminosity
+ 292-303  F12.9 Rsun      Rad       ? Stellar Radius
+ 305-315  F11.9 Rsun    e_Rad       ? Uncertainty in Stellar Radius
+--------------------------------------------------------------------------------
+Note (1): from the HIPPARCOS catalog (1997ESASP1200.....E. Cat. I/239)
+Note (2): from the TYCHO-2 catalog (2000A&A...355L..27H, Cat. I/259)
+Note (3): from Alonso et al. (1999A&AS..140..261A)
+Note (4): from the GAIA Data Release 2 (2018A&A...616A...1G, Cat. I/345)
+Note (5): from Bailer-Jones et al. (2018AJ....156...58B, Cat. I/347)
+--------------------------------------------------------------------------------
+
+Acknowledgements:
+    Gael Ottoni, gael.ottoni(at)unige.ch
+
+================================================================================
+(End)   Gael Ottoni [UNIGE], Patricia Vannier [CDS]                  27-Dec-2021

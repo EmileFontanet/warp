@@ -60,7 +60,12 @@ def download_points(star, instrument=None, do_secular_corr=True,
         print(f"[INFO] Downloading data for star: {star.name}")
     dace_id = get_dace_id(star, verbose=verbose,
                           instrument=instrument, skip_ndrs=skip_ndrs)
-    oid, main_id = query_simbad_oid(star.name)
+    try:
+        oid, main_id = query_simbad_oid(star.name)
+    except Exception as e:
+        oid, main_id = 'star_not_found', 'star_not_found'
+        print(f'Error when querying simbad oid: {e}')
+
     filters = {
         'obj_id_daceid': {
             'equal': [dace_id, star.name, oid, main_id]

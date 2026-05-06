@@ -23,6 +23,11 @@ def secular_acceleration(pmra, pmdec, parallax):
 
 
 def apply_secular_correction(star_name, jd, rv, jd_ref=None, verbose=True):
+    if star_name is None:
+        if verbose:
+            print(
+                "[WARN] No star name provided, skipping secular acceleration correction.")
+        return rv
     try:
         results = query_gaia(star_name, verbose=verbose)
     except Exception as e:

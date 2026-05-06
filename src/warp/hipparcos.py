@@ -39,3 +39,28 @@ def query_hip_photometry(hip_number):
             data.append(row)
     data = pd.DataFrame(data)
     return data
+
+
+def query_kervella_table(hip_id):
+    from astroquery.vizier import Vizier
+    v = Vizier(
+        columns=["*"],     # retrieve all columns
+        row_limit=50
+    )
+
+    result = v.query_constraints(
+        catalog="J/A+A/657/A7/tablea1",
+        HIP=str(hip_id)
+    )
+    if len(result) == 0:
+        return None
+    return result[0].to_pandas()
+
+
+def query_gaia_nss(gaia_id):
+    from astroquery.gaia import Gaia
+    query = f"""
+     SELECT nss_two_body_orbit.source_id,nss_two_body_orbit.nss_solution_type,nss_two_body_orbit.ra,nss_two_body_orbit.dec,nss_two_body_orbit.parallax,nss_two_body_orbit.pmra,nss_two_body_orbit.pmdec,nss_two_body_orbit.period,nss_two_body_orbit.t_periastron,nss_two_body_orbit.eccentricity,nss_two_body_orbit.center_of_mass_velocity,nss_two_body_orbit.semi_amplitude_primary,nss_two_body_orbit.mass_ratio,nss_two_body_orbit.inclination,nss_two_body_orbit.arg_periastron FROM gaiadr3.nss_two_body_orbit WHERE source_id = {gaia_id}"""
+
+    job = Gaia.launch_job(query)
+    return job.get_results().to_pandas()

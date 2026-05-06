@@ -1,7 +1,7 @@
 from . import cascades
 from . import dace
 from .simbad import query_simbad
-from .hipparcos import get_hip_id, query_hip_photometry
+from .hipparcos import get_hip_id, query_hip_photometry, query_gaia_nss, query_kervella_table
 from .stats import mad_clip_mask, weighted_mean
 from .tseries import gls_periodogram
 import pandas as pd
@@ -12,7 +12,7 @@ import numpy as np
 class Star:
     def __init__(self, name=None, instrument=None, load_rv=True, load_tess=False, max_erv=30,
                  do_adjust_means=True, do_secular_corr=True, skip_ndrs=True, keep_bad_qc=False, verbose=True,
-                 filter_pipeline=True, filter_columns=True, remove_negative_erv=True, set_ndrs_as_ins=True):
+                 filter_pipeline=True, filter_columns=True, remove_negative_erv=True, set_ndrs_as_ins=True, simbad_table=None):
         """A class instance representing a star. This object allows to download, visualize and analyse RV and 
         photometric data.
 
@@ -30,6 +30,7 @@ class Star:
             filter_pipeline (bool, optional): If true, only the latest known pipeline is kept for each instrument. Defaults to True.
             filter_columns (bool, optional): If true, the columns for the RV data obtained from DACE are filtered in order to keep only relevant data. Defaults to True.
             remove_negative_erv (bool, optional): If true, points with a negative RV uncertainty are discarded. Defaults to True.
+            simbad_table (pd.DataFrame, optional): A DataFrame containing Simbad data for the star. Defaults to None.
         """
         self.name = name
         self.instrument = instrument
@@ -58,6 +59,28 @@ class Star:
         self._ids = get_ids(self.name)
         return
 
+    def load_from_table(self, rv_data, filter_columns=True,
+                        filter_pipeline=True,
+                        remove_negative_erv=True, verbose=True,
+                        skip_ndrs=True, set_ndrs_as_ins=True):
+        from .utils import apply_secular_correction
+
+        self.rv_data = rv_data
+        if (self.do_secular_corr):
+            if verbose:
+                print("[INFO] Applying secular acceleration correction...")
+            self.rv_data['spectro_ccf_rv'] = apply_secular_correction(
+                self.name,
+                self.rv_data['obj_date_bjd'],
+                self.rv_data['spectro_ccf_rv'],
+                verbose=verbose
+            )
+        self.do_filtering(filter_columns=filter_columns,
+                          filter_pipeline=filter_pipeline,
+                          remove_negative_erv=remove_negative_erv, verbose=verbose,
+                          skip_ndrs=skip_ndrs, set_ndrs_as_ins=set_ndrs_as_ins)
+        return
+
     def load_rv(self, filter_columns=True,
                 filter_pipeline=True,
                 remove_negative_erv=True, verbose=True,
@@ -70,6 +93,15 @@ class Star:
             verbose=verbose
         )
         self.rv_data = self.rv_data.sort_values(by='obj_date_bjd')
+        self.do_filtering(filter_columns=filter_columns,
+                          filter_pipeline=filter_pipeline,
+                          remove_negative_erv=remove_negative_erv,
+                          verbose=verbose,
+                          skip_ndrs=skip_ndrs,
+                          set_ndrs_as_ins=set_ndrs_as_ins)
+        return
+
+    def do_filtering(self, filter_columns=True, filter_pipeline=True, remove_negative_erv=True, verbose=True, skip_ndrs=True, set_ndrs_as_ins=True):
         if filter_columns:
             self.filter_columns()
         if filter_pipeline:
@@ -83,6 +115,7 @@ class Star:
         if remove_negative_erv:
             self.remove_condition(self.rv_data.spectro_ccf_rv_err <= 0,
                                   origin='negative_rv_err', verbose=verbose, adjust_means=False)
+        return
 
     def filter_pipeline(self, verbose=True, skip_ndrs=True, set_ndrs_as_ins=True):
         from .utils import get_latest_pipeline
@@ -130,12 +163,12 @@ class Star:
             return None
         min_freq = 1 / max_period if max_period is not None else None
         max_freq = 1 / min_period if min_period is not None else None
-        freq, power, best_period, fap = gls_periodogram(self.t,
-                                                        self.rv,
-                                                        self.rv_err,
-                                                        min_freq=min_freq,
-                                                        max_freq=max_freq)
-        return freq, power, best_period, fap
+        freq, power, best_period, fap, power_threshold = gls_periodogram(self.t,
+                                                                         self.rv,
+                                                                         self.rv_err,
+                                                                         min_freq=min_freq,
+                                                                         max_freq=max_freq)
+        return freq, power, best_period, fap, power_threshold
 
     def load_hip_photometry(self):
         if not hasattr(self, 'hip'):
@@ -145,6 +178,17 @@ class Star:
             return None
         self.hip_photometry = query_hip_photometry(hip_number=self.hip[4:])
         return self.hip_photometry
+
+    def load_gaia_nss(self):
+        return query_gaia_nss(self.gaia_id)
+
+    def load_karvella_companion(self):
+        if not hasattr(self, 'hip'):
+            self.hip = get_hip_id(self.name)
+        if self.hip is None:
+            print("[WARN] No HIP ID found, cannot retrieve karvella.")
+            return None
+        return query_kervella_table(self.hip.replace("HIP ", ""))
 
     def clip_rv(self, threshold=5, n_iter=3, groups='ins_name', ins_list=None, verbose=True, adjust_means=True, inplace=True):
         if not hasattr(self, 'rv_data'):
@@ -170,17 +214,17 @@ class Star:
         if not hasattr(self, 'rv_data'):
             print("[WARN] No RV data loaded, cannot adjust means.")
             return
-
-        for ins in ins_list:
-            for drs in self.rv_data[self.rv_data.ins_name == ins]['ins_drs_version'].unique():
-                ins_mask = (self.rv_data.ins_name == ins) & (
-                    self.rv_data['ins_drs_version'] == drs)
-                mean_rv, _ = weighted_mean(self.rv[ins_mask],
-                                           self.rv_err[ins_mask])
-                self.rv_data.loc[ins_mask, 'spectro_ccf_rv'] -= mean_rv
-                if verbose:
-                    print(
-                        f"[INFO] Adjusted mean RV for instrument {ins} (DRS version {drs}) by subtracting {mean_rv:.3f} m/s.")
+        for series_ in series:
+            for ins in ins_list:
+                for drs in self.rv_data[self.rv_data.ins_name == ins]['ins_drs_version'].unique():
+                    ins_mask = (self.rv_data.ins_name == ins) & (
+                        self.rv_data['ins_drs_version'] == drs)
+                    mean_rv, _ = weighted_mean(self.rv_data[series_][ins_mask],
+                                               self.rv_data[f'{series_}_err'][ins_mask])
+                    self.rv_data.loc[ins_mask, series_] -= mean_rv
+                    if verbose:
+                        print(
+                            f"[INFO] Adjusted mean {series_} for instrument {ins} (DRS version {drs}) by subtracting {mean_rv:.3f} m/s.")
         self.did_adjust_means = True
         return
 
@@ -237,7 +281,35 @@ class Star:
                               save_fig=save_fig, show_plot=show_plot, **kwargs)
         return fig, ax
 
-    def bin_by_night(self, group_cols=['date_night', 'ins_name'], exclude_cols=None, verbose=True):
+    def plot_phasefold(self,
+                       planet_index=0,
+                       fig=None,
+                       ax=None,
+                       phase_pad=40,
+                       n_model=1000,
+                       data_alpha_main=0.7,
+                       data_alpha_wrap=0.25,
+                       model_color="black",
+                       model_lw=1.5,):
+        from .plotting import plot_phase_fold
+        if self.rv_model is None:
+            raise ValueError(
+                'No rv model computed. Compute one using the fit_keplerian method')
+        fig, ax = plot_phase_fold(self.rv_model,
+                                  planet_index=planet_index,
+                                  fig=fig,
+                                  ax=ax,
+                                  star_name=self.name,
+                                  instruments=self.ins,
+                                  phase_pad=phase_pad,
+                                  n_model=n_model,
+                                  data_alpha_main=data_alpha_main,
+                                  data_alpha_wrap=data_alpha_wrap,
+                                  model_color=model_color,
+                                  model_lw=model_lw)
+        return fig, ax
+
+    def bin_by_night(self, group_cols=['date_night', 'ins_name', 'ins_drs_version'], exclude_cols=None, verbose=True):
         from .tseries import bin_by_night
         from .config import exclude_cols_bin_by_night
         if exclude_cols is None:
@@ -259,7 +331,7 @@ class Star:
                 self.remove_condition(
                     self.rv_data.ins_name == ins, origin='single_observation', verbose=verbose, adjust_means=False)
 
-    def fit_keplerian(self, N_pla=3, n_lin=1, stellar_jitter=0, fap_threshold=1e-3, periods_init=[], fix_cor_offsets=False):
+    def fit_keplerian(self, N_pla=3, n_lin=0, stellar_jitter=0, fap_threshold=1e-3, periods_init=[], fix_cor_offsets=False, fit_param=["P", "la0", "K", "sqrtesinw", "sqrtecosw"], fit_ins_jitter=False, ref_epoch=None, fit_stellar_jitter=False):
         from .kepmodel_wrapper import fit_keplerian
         self.rv_model = fit_keplerian(
             self.t.values,
@@ -271,7 +343,11 @@ class Star:
             stellar_jitter=stellar_jitter,
             fap_threshold=fap_threshold,
             periods_init=periods_init,
-            fix_cor_offsets=fix_cor_offsets
+            fix_cor_offsets=fix_cor_offsets,
+            fit_param=fit_param,
+            fit_ins_jitter=fit_ins_jitter,
+            ref_epoch=ref_epoch,
+            fit_stellar_jitter=fit_stellar_jitter
         )
         return self.rv_model
 
@@ -292,6 +368,13 @@ class Star:
             save_fig=save_fig,
             show_plot=show_plot,
             **kwargs
+        )
+        return fig, ax
+
+    def plot_series_periodogram(self, series, ax=None, fig=None):
+        from .plotting import plot_series_periodogram
+        fig, ax = plot_series_periodogram(
+            rv_data=self.rv_data, series=series, ax=ax, fig=None
         )
         return fig, ax
 
@@ -384,3 +467,12 @@ class Star:
         if self._ids is None:
             self.load_ids()
         return self._ids
+
+    @property
+    def gaia_id(self):
+        if self._ids is None:
+            self.load_ids()
+        id = [c.replace('Gaia DR3 ', "")
+              for c in self._ids if c.startswith('Gaia DR3')][0]
+
+        return int(id) if len(id) > 0 else None
