@@ -15,10 +15,23 @@ warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO)
 
 
-def download_and_extract_lcs(star_name, sector=None, limit=5, cutout_size=(35, 35), timeout=45, verbose=True):
+def download_and_extract_lcs(star_name, sector=None, limit=35, cutout_size=(35, 35), timeout=45, verbose=True, download='individual'):
+    """Downloads and extracts light curves of the TESS mission from the tesscut images
 
+    Args:
+        star_name (str): Name of the star to download the light curve for.
+        sector (list, optional): List of sectors to download. Defaults to None.
+        limit (int, optional): Maximum number of TPFs to download. Defaults to 35.
+        cutout_size (tuple, optional): Size of the cutout image. Defaults to (35, 35).
+        timeout (int, optional): Timeout for the download. Defaults to 45.
+        verbose (bool, optional): Whether to print verbose output. Defaults to True.
+        download (str, optional): Type of download to perform. Defaults to 'individual'. Options are 'individual' or 'bulk'.
+
+    Returns:
+        _type_: _description_
+    """
     tpfs = load_tpf_by_name(star_name, sector=sector, limit=limit,
-                            cutout_size=cutout_size, timeout=timeout, verbose=verbose)
+                            cutout_size=cutout_size, timeout=timeout, verbose=verbose, download=download)
     if tpfs is None:
         return None
     lcs = []
@@ -36,6 +49,7 @@ def lc_from_tpf(tpf, verbose=True):
         tpf = tpf[finite_mask]
         aper = tpf.create_threshold_mask()
         uncorrected_lc = tpf.to_lightcurve(aperture_mask=aper)
+        uncorrected_lc = uncorrected_lc.remove_nans()
         # Make a design matrix and pass it to a linear regression corrector
         dm = DesignMatrix(tpf.flux[:, ~aper], name='regressors').pca(
             5).append_constant()
@@ -45,6 +59,7 @@ def lc_from_tpf(tpf, verbose=True):
         # Optional: Remove the scattered light, allowing for the large offset from scattered light
         corrected_ffi_lc = uncorrected_lc - rc.model_lc + \
             np.percentile(rc.model_lc.flux, 5)
+        corrected_ffi_lc = corrected_ffi_lc.remove_nans()
     except Exception as e:
         if verbose:
             logging.warning(f"[WARN] Failed to process TPF: {e}")
@@ -89,10 +104,12 @@ def download_with_timeout(row, cutout_size=(25, 25), timeout=60):
 def load_tpf_by_name(
     star_name,
     sector=None,
-    limit=5,
+    limit=35,
     cutout_size=(25, 25),
     timeout=60,
-    verbose=True
+    verbose=True,
+    download='individual'
+
 ):
 
     if verbose:
@@ -107,7 +124,13 @@ def load_tpf_by_name(
         search_result = search_result[:limit]
 
     results = []
-
+    if download == 'bulk':
+        try:
+            results = search_result.download_all()
+            return results if len(results) > 0 else None
+        except Exception as e:
+            logging.error(f'Error occurred while downloading all TPFs: {e}')
+            return None
     for row in search_result:
         if verbose:
             logging.info(f"Downloading {row.mission}")
