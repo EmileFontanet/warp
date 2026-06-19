@@ -213,28 +213,51 @@ class Star:
         # self.rv_data = self.rv_data[mask].copy()
         return mask
 
-    def adjust_means(self, verbose=True, ins_list=None, series=None):
-        if series is None:
-            series = ['rv',
-                      'ccf_bispan', 'ccf_fwhm', 'ccf_contrast']
-        if ins_list is None:
-            ins_list = self.rv_data.instrument_name.unique()
-        if not hasattr(self, 'rv_data'):
-            print("[WARN] No RV data loaded, cannot adjust means.")
-            return
-        for series_ in series:
-            for ins in ins_list:
-                for drs in self.rv_data[self.rv_data.instrument_name == ins]['drs_id'].unique():
-                    ins_mask = (self.rv_data.instrument_name == ins) & (
-                        self.rv_data['drs_id'] == drs)
-                    mean_rv, _ = weighted_mean(self.rv_data[series_][ins_mask],
-                                               self.rv_data[f'{series_}_err'][ins_mask])
-                    self.rv_data.loc[ins_mask, series_] -= mean_rv
-                    if verbose:
-                        print(
-                            f"[INFO] Adjusted mean {series_} for instrument {ins} (DRS version {drs}) by subtracting {mean_rv:.3f} m/s.")
+    def adjust_means(self, verbose=True, ins_list=None,
+                     series=('rv', 'ccf_bispan', 'ccf_fwhm', 'ccf_contrast')):
+
+        df = self.rv_data if ins_list is None else \
+            self.rv_data[self.rv_data.instrument_name.isin(ins_list)]
+
+        groups = list(df.groupby(
+            ['instrument_name', 'drs_id', 'rv_extraction_method']
+        ))
+
+        for s in series:
+            for (ins, drs, ext), g in groups:
+                mean, _ = weighted_mean(g[s], g[f'{s}_err'])
+                self.rv_data.loc[g.index, s] -= mean
+
+                if verbose:
+                    print(
+                        f"[INFO] Adjusted mean {s} for {ins} "
+                        f"(DRS {drs}, extraction {ext}) by {mean:.3f}"
+                    )
+
         self.did_adjust_means = True
-        return
+    # def adjust_means(self, verbose=True, ins_list=None, series=None):
+    #     if series is None:
+    #         series = ['rv',
+    #                   'ccf_bispan', 'ccf_fwhm', 'ccf_contrast']
+    #     if ins_list is None:
+    #         ins_list = self.rv_data.instrument_name.unique()
+    #     if not hasattr(self, 'rv_data'):
+    #         print("[WARN] No RV data loaded, cannot adjust means.")
+    #         return
+    #     for series_ in series:
+    #         for ins in ins_list:
+    #             for drs in self.rv_data[self.rv_data.instrument_name == ins]['drs_id'].unique():
+    #                 for extraction_method in self.rv_data[(self.rv_data.instrument_name == ins) & (self.rv_data['drs_id'] == drs)]['rv_extraction_method'].unique():
+    #                     ins_mask = (self.rv_data.instrument_name == ins) & (
+    #                         self.rv_data['drs_id'] == drs) & (self.rv_data['rv_extraction_method'] == extraction_method)
+    #                     mean_rv, _ = weighted_mean(self.rv_data[series_][ins_mask],
+    #                                                self.rv_data[f'{series_}_err'][ins_mask])
+    #                     self.rv_data.loc[ins_mask, series_] -= mean_rv
+    #                     if verbose:
+    #                         print(
+    #                             f"[INFO] Adjusted mean {series_} for instrument {ins} (DRS version {drs}) by subtracting {mean_rv:.3f} m/s.")
+    #     self.did_adjust_means = True
+    #     return
 
     def remove_condition(self, condition, origin, verbose=True, adjust_means=True):
         """
@@ -328,6 +351,8 @@ class Star:
             exclude_cols=exclude_cols,
             verbose=verbose
         )
+        self.rv_data = self.rv_data.sort_values(by='rjd')
+
         return
 
     def remove_single_observations(self, verbose=True):

@@ -72,6 +72,24 @@ def download_points(star, instrument=None, do_secular_corr=True,
         sorted_by_instrument=False,
         drs_version=drs_version
     )
+    if 'NIRPS' in results.instrument_name.unique():
+        from dace_query.spectroscopy import Source
+        import pandas as pd
+        # If NIRPS is present in the data, we have to re-query asking for telluric-corrected RVs.
+        if verbose:
+            print(
+                "[INFO] NIRPS data detected. Applying NIRPS-specific corrections...")
+        filters['instrument_name'] = {'equal': ['NIRPS']}
+        nirps_results = Spectroscopy.get_timeseries(
+            target=star.name,
+            filters=filters,
+            output_format='pandas',
+            sorted_by_instrument=False,
+            drs_version=drs_version,
+            rv_sources=[Source.TELLURIC_CORRECTION]
+        )
+        results = pd.concat(
+            [results[results.instrument_name != 'NIRPS'], nirps_results], ignore_index=True)
     if results is None or len(results) == 0:
         raise ValueError(f"No data found for star {star.name} in DACE.")
     results = results.copy()
