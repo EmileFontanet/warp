@@ -28,7 +28,7 @@ offsets_relative_to_cor14 = {
 
 def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=0, stellar_jitter=0, fap_threshold=1e-3, periods_init=[],
                   fix_cor_offsets=False, verbose=True, fit_param=["P", "la0", "K", "sqrtesinw", "sqrtecosw"], fit_ins_jitter=False,
-                  ref_epoch=None, fit_stellar_jitter=False):
+                  ref_epoch=None, fit_stellar_jitter=False, min_period=1.1):
     if isinstance(periods_init, int) or isinstance(periods_init, float):
         periods_init = [periods_init]
     instjit = {}
@@ -106,9 +106,8 @@ def fit_keplerian(time, rv_data, rv_err, instruments, N_pla=3, n_lin=0, stellar_
         P = 2 * np.pi / nu
         # Compute FAP
 
-        kmax = np.argmax(power[P > 2])
+        kmax = np.argmax(power[P > 1.1])
         faplvl = rv_model.fap(power[kmax], nu.max())
-
         if faplvl > fap_threshold:
             break
         # Add new planet

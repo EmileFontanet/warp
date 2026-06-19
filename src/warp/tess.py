@@ -108,7 +108,7 @@ def load_tpf_by_name(
     cutout_size=(25, 25),
     timeout=60,
     verbose=True,
-    download='individual'
+    download='bulk'
 
 ):
 
@@ -177,7 +177,9 @@ def to_fits_light(lc, filename, verbose=True):
 def detrend(time, flux, flux_err=None,
             smooth_days=3.0,
             sigma_clip=5.0,
-            return_trend=False):
+            return_trend=False,
+            verbose=True,
+            goal='astero'):
     """
     Mild detrending for TESS red-giant light curves.
 
@@ -195,17 +197,20 @@ def detrend(time, flux, flux_err=None,
         Sigma clipping threshold.
     return_trend : bool
         If True, also return fitted trend.
+    goal : str
+        The goal of the detrending. Options are 'astero' or 'transit'.
 
     Returns
     -------
     time_clean, flux_flat[, trend]
     """
-    from scipy.interpolate import UnivariateSpline
+    from scipy.interpolate import UnivariateSpline, interp1d
     from scipy.signal import savgol_filter
     time = np.asarray(time)
     flux = np.asarray(flux)
-
-    mask = np.isfinite(time) & np.isfinite(flux)
+    if goal not in ['astero', 'transit']:
+        raise ValueError("Invalid goal. Must be 'astero' or 'transit'.")
+    mask = np.isfinite(time) & np.isfinite(flux) & (flux > 0)
 
     if flux_err is not None:
         flux_err = np.asarray(flux_err)
@@ -226,31 +231,65 @@ def detrend(time, flux, flux_err=None,
     # sigma clipping
     resid = f - np.nanmedian(f)
     mad = 1.4826 * np.nanmedian(np.abs(resid))
-    good = np.abs(resid) < sigma_clip * mad
+    if (goal == 'astero'):
+        good = np.abs(resid) < sigma_clip * mad
+        t = t[good]
+        f = f[good]
+        ferr = ferr[good]
 
-    t = t[good]
-    f = f[good]
-    ferr = ferr[good]
+        # cadence
+        dt = np.nanmedian(np.diff(t))
 
-    # cadence
-    dt = np.nanmedian(np.diff(t))
+        # smoothing window in cadences
+        win = int(np.round(smooth_days / dt))
 
-    # smoothing window in cadences
-    win = int(np.round(smooth_days / dt))
+        if win % 2 == 0:
+            win += 1
 
-    if win % 2 == 0:
-        win += 1
+        win = max(win, 11)
 
-    win = max(win, 11)
+        trend = savgol_filter(f, window_length=win, polyorder=1)
 
-    trend = savgol_filter(f, window_length=win, polyorder=1)
+        flux_flat = f / trend
 
-    flux_flat = f / trend - 1.0
+        if return_trend:
+            return t, flux_flat, trend
 
-    if return_trend:
-        return t, flux_flat, trend
+        return t, flux_flat
+    elif (goal == 'transit'):
+        trend_good = np.abs(resid) < 3 * mad
+        lc_good = (resid < 10 * mad)  # & (f > 0.93) & (f < 1.05)
 
-    return t, flux_flat
+        t_lc = t[lc_good]
+        f_lc = f[lc_good]
+        ferr_lc = ferr[lc_good]
+
+        t_trend = t[trend_good]
+        f_trend = f[trend_good]
+
+        # cadence
+        dt = np.nanmedian(np.diff(t_trend))
+
+        # smoothing window in cadences
+        win = int(np.round(smooth_days / dt))
+
+        if win % 2 == 0:
+            win += 1
+
+        win = max(win, 11)
+
+        trend = savgol_filter(f_trend, window_length=win, polyorder=1)
+        interp = interp1d(t_trend, trend,
+                          bounds_error=False,
+                          fill_value='extrapolate')
+
+        trend_full = interp(t_lc)
+        flux_flat = f_lc / trend_full
+
+        if return_trend:
+            return t_lc, flux_flat, trend_full
+
+        return t, flux_flat
 
 
 def ls_periodogram(time, flux_flat,
@@ -337,6 +376,157 @@ def save_for_pysyd(filename, time, flux):
         arr,
         fmt="%.8f %.16f"
     )
+
+
+def get_predicted_transits(rvmod, lightcurve):
+    """Get the predicted transit times based on the RV fit
+
+    Args:
+        rvmod (rv_model): The rv_model
+        lightcurve (hdul): The hdul containing the lightcurve data
+
+    Returns:
+        _type_: _description_
+    """
+    for i in range(rvmod.nkep):
+        rvmod.set_keplerian_param(f'{i}', ['P', 'e', 'w', 'K', 'Tc'])
+
+    future_transit_times = {}
+    future_transit_err = {}
+    lc_data = lightcurve[1].data
+    for pla in range(rvmod.nkep):
+        planet_idx = pla
+        period_err = rvmod.get_param_error(
+        )[1][rvmod.fit_param.index(f'kep.{planet_idx}.P')]
+        Tc_err = rvmod.get_param_error(
+        )[1][rvmod.fit_param.index(f'kep.{planet_idx}.Tc')]
+        transit_time = rvmod.get_param(
+            f'kep.{planet_idx}.Tc') + rvmod.t0 + 2400000
+        future_transit_times[f'planet_{pla+1}'] = []
+        future_transit_err[f'planet_{pla+1}'] = []
+        lc_times = lc_data['time']+2457000
+        n_start = int((lc_times[0]-transit_time) /
+                      rvmod.get_param(f'kep.{planet_idx}.P'))-1
+        # future_transit_times[f'planet_{pla+1}'][f'sector_{sect}'] = []
+        # future_transit_err[f'planet_{pla+1}'][f'sector_{sect}'] = []
+        for n in np.linspace(n_start, n_start+499, 500, dtype='int'):
+            future_transit = transit_time + \
+                (n*rvmod.get_param(f'kep.{planet_idx}.P'))
+            transit_err = np.sqrt((n*period_err)**2 + Tc_err**2)
+            future_transit_lower = future_transit-transit_err
+            future_transit_upper = future_transit+transit_err
+            if (future_transit > lc_times[0] and future_transit < lc_times[-1]) or (future_transit_lower > lc_times[0] and future_transit_lower < lc_times[-1]) or (future_transit_upper > lc_times[0] and future_transit_upper < lc_times[-1]):
+                future_transit_times[f'planet_{pla+1}'].append(
+                    future_transit)
+                future_transit_err[f'planet_{pla+1}'].append(
+                    (future_transit_lower, future_transit_upper))
+
+    return future_transit_times, future_transit_err
+
+
+def list_tess_lightcurves(target, output_format='pandas', accepted_pipelines=['SPOC', 'TESS-SPOC', 'QLP'], verbose=True):
+    from astroquery.mast import Observations
+    """
+    target: TIC ID string ('TIC 123456789') or coordinates
+    output_format: str, either 'pandas' or 'original'
+    accepted_pipelines: list of str, the pipelines to accept (by order of preference)
+    """
+
+    obs = Observations.query_criteria(
+        target_name=target,
+        dataproduct_type="timeseries"
+    )
+
+    # Filter by accepted pipelines
+    mask = obs['provenance_name'] == None
+    for pipeline in accepted_pipelines:
+        mask |= obs['provenance_name'] == pipeline
+    obs = obs[mask]
+
+    if len(obs) == 0:
+        print(f"No light curves found for {target}")
+        return None
+    for sector in np.unique(obs['sequence_number']):
+        if len(obs[obs['sequence_number'] == sector]) > 1:
+            if verbose:
+                logging.warning(
+                    f"Multiple light curves found for {target} in sector {sector}. Attempting to filter by pipeline.")
+            for pipeline in accepted_pipelines:
+                if pipeline in obs['provenance_name'][obs['sequence_number'] == sector]:
+                    obs = obs[~((obs['sequence_number'] == sector)
+                                & (obs['provenance_name'] != pipeline))]
+                    break
+
+    if output_format == 'pandas':
+        df = obs.to_pandas()
+        cols = [
+            "target_name",
+            "sequence_number",
+            "provenance_name",
+            "obs_id",
+            "t_exptime",
+            "obs_title"
+        ]
+
+        df = df[cols].sort_values(
+            ["sequence_number", "provenance_name"]
+        )
+    elif output_format == 'both':
+        df = obs.to_pandas()
+        cols = [
+            "target_name",
+            "sequence_number",
+            "provenance_name",
+            "obs_id",
+            "t_exptime",
+            "obs_title"
+        ]
+
+        df = df[cols].sort_values(
+            ["sequence_number", "provenance_name"]
+        )
+        return df, obs
+    else:
+        return obs
+
+    return df
+
+
+def get_numax_init(time, flux):
+    from scipy.signal import savgol_filter
+    from astropy.timeseries import LombScargle
+    # remove NaNs
+    m = np.isfinite(time) & np.isfinite(flux)
+    time = time[m]
+    flux = flux[m]
+
+    flux = flux - np.nanmedian(flux)
+    flux = flux / np.nanmedian(np.abs(flux))
+    # -------------------------
+    # PSD (Lomb-Scargle)
+    # -------------------------
+    freq = np.linspace(1, 300, 5000)  # µHz region of interest
+
+    ls = LombScargle(time, flux)
+    power = ls.power(freq * 1e-6)  # convert µHz → Hz internally
+
+    power = np.array(power)
+
+    # -------------------------
+    # -------------------------
+    smooth = savgol_filter(power, 151, 3)
+
+    # -------------------------
+    # restrict to red giant region
+    # -------------------------
+    mask = (freq >= 10) & (freq <= 250)
+
+    f_sub = freq[mask]
+    p_sub = smooth[mask]
+    # νmax guess = peak
+    nu_max = f_sub[np.argmax(p_sub)]
+    print(nu_max)
+    return nu_max, freq, power, smooth
 # def estimate_numax(freq_uHz, power,
 #                    fmin=40.0,
 #                    fmax=180.0,

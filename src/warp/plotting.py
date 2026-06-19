@@ -23,14 +23,14 @@ ins_colors = {
 def plot_rv(rv_data, ax=None, fig=None, star_name=None, save_fig=False, show_plot=False, **kwargs):
     if ax is None:
         fig, ax = plt.subplots(figsize=kwargs.get('figsize', (10, 6)))
-    for ins in rv_data['ins_name'].unique():
-        for drs in rv_data[rv_data.ins_name == ins]['ins_drs_version'].unique():
-            ins_mask = (rv_data['ins_name'] == ins) & (
-                rv_data['ins_drs_version'] == drs)
+    for ins in rv_data['instrument_name'].unique():
+        for drs in rv_data[rv_data.instrument_name == ins]['drs_id'].unique():
+            ins_mask = (rv_data['instrument_name'] == ins) & (
+                rv_data['drs_id'] == drs)
             color = ins_colors.get(ins, ins_colors['default'])
-            ax.errorbar(rv_data.loc[ins_mask, 'obj_date_bjd'],
-                        rv_data.loc[ins_mask, 'spectro_ccf_rv'],
-                        yerr=rv_data.loc[ins_mask, 'spectro_ccf_rv_err'],
+            ax.errorbar(rv_data.loc[ins_mask, 'rjd'],
+                        rv_data.loc[ins_mask, 'rv'],
+                        yerr=rv_data.loc[ins_mask, 'rv_err'],
                         fmt='o', label=f"{ins} ({drs})", color=color, alpha=0.7,
                         capsize=3, **kwargs)
     ax.set_xlabel('Time [d]')
@@ -51,8 +51,8 @@ def plot_rv_keplerian_fit(rv_data, rv_model, ax=None, fig=None, star_name=None,
     if ax is None:
         fig, ax = plt.subplots(figsize=kwargs.get('figsize', (10, 6)))
 
-    for ins in rv_data['ins_name'].unique():
-        ins_mask = rv_data['ins_name'] == ins
+    for ins in rv_data['instrument_name'].unique():
+        ins_mask = rv_data['instrument_name'] == ins
         color = ins_colors.get(ins, ins_colors['default'])
         if f"lin.{ins}_offset" in rv_model.fit_param:
             offset = rv_model.get_param(
@@ -68,18 +68,18 @@ def plot_rv_keplerian_fit(rv_data, rv_model, ax=None, fig=None, star_name=None,
             time_vals = pd.to_datetime(rv_data.loc[ins_mask, 'date_night'])
             ax.set_xlabel('Time [d]')
         elif date_format == 'rjd':
-            time_vals = rv_data.loc[ins_mask, 'obj_date_bjd']
+            time_vals = rv_data.loc[ins_mask, 'rjd']
             ax.set_xlabel('Date')
         ax.errorbar(time_vals,
-                    rv_data.loc[ins_mask, 'spectro_ccf_rv'] - offset,
-                    yerr=rv_data.loc[ins_mask, 'spectro_ccf_rv_err'],
+                    rv_data.loc[ins_mask, 'rv'] - offset,
+                    yerr=rv_data.loc[ins_mask, 'rv_err'],
                     fmt='o', label=ins, color=color, alpha=0.7,
                     capsize=2, ms=2, **kwargs)
     # Plot model
-    time_grid = np.linspace(np.min(rv_data['obj_date_bjd']),
-                            np.max(rv_data['obj_date_bjd']), 5000)
+    time_grid = np.linspace(np.min(rv_data['rjd']),
+                            np.max(rv_data['rjd']), 5000)
     model_rv = rv_model.keplerian_model(
-        time_grid-np.median(rv_data['obj_date_bjd']))
+        time_grid-np.median(rv_data['rjd']))
     if date_format == 'datetime':
         time_grid = pd.date_range(start=pd.to_datetime(rv_data['date_night']).min(),
                                   end=pd.to_datetime(
@@ -89,7 +89,7 @@ def plot_rv_keplerian_fit(rv_data, rv_model, ax=None, fig=None, star_name=None,
     drift = np.zeros_like(time_grid)
     for k in range(drift_pow):
         drift += rv_model.get_param(
-            f"lin.drift_pow{k+1}") * (time_grid - np.median(rv_data['obj_date_bjd']))**(k+1)
+            f"lin.drift_pow{k+1}") * (time_grid - np.median(rv_data['rjd']))**(k+1)
     ax.plot(time_grid, model_rv + drift,
             color='black', lw=1, label='Keplerian Fit')
     if drift_pow > 0:
@@ -112,10 +112,10 @@ def plot_rv_keplerian_fit(rv_data, rv_model, ax=None, fig=None, star_name=None,
 def plot_series(df, quantity, ax=None, fig=None, star_name=None, save_fig=False, show_plot=False, **kwargs):
     if ax is None:
         fig, ax = plt.subplots(figsize=kwargs.get('figsize', (10, 6)))
-    for ins in df['ins_name'].unique():
-        ins_mask = df['ins_name'] == ins
+    for ins in df['instrument_name'].unique():
+        ins_mask = df['instrument_name'] == ins
         color = ins_colors.get(ins, ins_colors['default'])
-        ax.errorbar(df.loc[ins_mask, 'obj_date_bjd'],
+        ax.errorbar(df.loc[ins_mask, 'rjd'],
                     df.loc[ins_mask, quantity],
                     yerr=df.loc[ins_mask,
                                 f"{quantity}_err"] if f"{quantity}_err" in df.columns else None,
@@ -178,7 +178,8 @@ def plot_phase_fold(
     # Orbital params
     p = planet_index
     P = rv_model.get_param(f'kep.{p}.P')
-    rv_model.set_keplerian_param(str(planet_index), param=['P', 'K', 'la0', 'sqrtecosw', 'sqrtesinw'])
+    rv_model.set_keplerian_param(str(planet_index), param=[
+                                 'P', 'K', 'la0', 'sqrtecosw', 'sqrtesinw'])
     # Recover e and omega consistently
     if f'kep.{p}.w' in rv_model.fit_param:
         w = rv_model.get_param(f'kep.{p}.w')
@@ -322,7 +323,7 @@ def plot_phase_fold(
     return fig, ax
 
 
-def plot_series_periodogram(rv_data, series, adjust_means=True, ax=None, fig=None, fap_level=1e-3, min_freq=None, max_freq=None, samples=10000):
+def plot_series_periodogram(rv_data, series, adjust_means=True, ax=None, fig=None, fap_level=1e-3, min_freq=None, max_freq=None, samples=10000, verbose=True):
     from .tseries import gls_periodogram
     from .stats import weighted_mean
     rv_data = rv_data.copy()
@@ -331,14 +332,16 @@ def plot_series_periodogram(rv_data, series, adjust_means=True, ax=None, fig=Non
     else:
         series_err = None
     if (adjust_means):
-        for ins in rv_data.ins_name.unique():
-            ins_mask = rv_data.ins_name == ins
+        for ins in rv_data.instrument_name.unique():
+            ins_mask = rv_data.instrument_name == ins
             mean_rv, _ = weighted_mean(rv_data[series][ins_mask],
                                        series_err[ins_mask])
             rv_data.loc[ins_mask, series] -= mean_rv
-            print(f'Adjusted means for ins {ins} by subtracting {mean_rv:.2f}')
+            if verbose:
+                print(
+                    f'Adjusted means for ins {ins} by subtracting {mean_rv:.2f}')
     freq, power, best_period, fap, power_threshold = gls_periodogram(
-        rv_data.obj_date_bjd, rv_data[series], series_err)
+        rv_data.rjd, rv_data[series], series_err)
     if ax is None:
         fig, ax = plt.subplots()
     ax.plot(1/freq, power)

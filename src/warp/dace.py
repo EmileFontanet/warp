@@ -43,7 +43,7 @@ def download_files(file_list, file_type='all', save_dir='', extract=True, verbos
 
 
 def download_points(star, instrument=None, do_secular_corr=True,
-                    skip_ndrs=True, verbose=True):
+                    skip_ndrs=True, latest_pipeline=True, verbose=True):
     from .simbad import query_simbad_oid
     """
     Download old and new DRS data for the specified star.
@@ -58,45 +58,38 @@ def download_points(star, instrument=None, do_secular_corr=True,
                        '2023-12-02']  # List of nights to exclude, if any
     if verbose:
         print(f"[INFO] Downloading data for star: {star.name}")
-    dace_id = get_dace_id(star, verbose=verbose,
-                          instrument=instrument, skip_ndrs=skip_ndrs)
-    try:
-        oid, main_id = query_simbad_oid(star.name)
-    except Exception as e:
-        oid, main_id = 'star_not_found', 'star_not_found'
-        print(f'Error when querying simbad oid: {e}')
-
-    filters = {
-        'obj_id_daceid': {
-            'equal': [dace_id, star.name, oid, main_id]
-        },
-        'ins_name': {
+    filters = {}
+    if instrument is not None:
+        filters['instrument_name'] = {
             'contains': instrument
         }
-    }
-    # if (skip_ndrs):
-    #     filters['ins_name']['notContains'] = ['NDRS']
 
-    results = Spectroscopy.query_database(
+    drs_version = 'latest' if latest_pipeline else None
+    results = Spectroscopy.get_timeseries(
+        target=star.name,
         filters=filters,
         output_format='pandas',
+        sorted_by_instrument=False,
+        drs_version=drs_version
     )
     if results is None or len(results) == 0:
         raise ValueError(f"No data found for star {star.name} in DACE.")
+    results = results.copy()
     if (do_secular_corr):
         if verbose:
             print("[INFO] Applying secular acceleration correction...")
         results['spectro_ccf_rv'] = apply_secular_correction(
             star.name,
-            results['obj_date_bjd'],
-            results['spectro_ccf_rv'],
-            verbose=verbose
+            results['rjd'],
+            results['rv'],
+            verbose=verbose,
+            astrometric_table=getattr(star, 'simbad_table', None)
         )
     # results = results[~results.date_night.isin(excluded_nights)].copy()
-    for ins in results.ins_name.unique():
-        n_points = len(results[results.ins_name == ins])
+    for ins in results.instrument_name.unique():
+        n_points = len(results[results.instrument_name == ins])
         bad_qc_points = len(
-            results[(results.ins_name == ins) & (~results.spectro_drs_qc)])
+            results[(results.instrument_name == ins) & (~results.drs_qc)])
         if verbose:
             print(
                 f"[INFO] Retrieved {n_points} points, including {bad_qc_points} for which the QC failed, for instrument {ins}.")
@@ -134,11 +127,10 @@ def get_dace_id(star, verbose=True, skip_ndrs=True, instrument=None):
                 'obj_id_catname': {
                     'equal': [name]
                 },
-                'ins_name': {
+                'instrument_name': {
                     'contains': instrument}
             }
-            # if (skip_ndrs):
-            #     filter['ins_name']['notContains'] = ['NDRS']
+
             with silence_dace_and_stdio():
                 results = Spectroscopy.query_database(filters=filter, limit=10)
             dace_id = results['obj_id_daceid'][results['obj_id_catname'] == name][0]
@@ -157,7 +149,7 @@ def mad_clip(data, threshold=5, n_iter=3, verbose=True):
     """
     Perform Median Absolute Deviation (MAD) clipping iteratively for each instrument.
     Args:
-        data (pd.DataFrame): DataFrame with at least ['ins_name', 'spectro_ccf_rv'] columns.
+        data (pd.DataFrame): DataFrame with at least ['instrument_name', 'spectro_ccf_rv'] columns.
         threshold (float): MAD clipping threshold.
         n_iter (int): Number of iterations per instrument.
     Returns:
@@ -167,11 +159,11 @@ def mad_clip(data, threshold=5, n_iter=3, verbose=True):
     results = {}
     data = data.copy()
 
-    for ins in data.ins_name.unique():
+    for ins in data.instrument_name.unique():
         print(
             f"[INFO] Performing MAD clipping for instrument: {ins} (threshold={threshold})")
 
-        ins_data = data[data.ins_name == ins].copy()
+        ins_data = data[data.instrument_name == ins].copy()
         results[ins] = []
 
         for i in range(n_iter):

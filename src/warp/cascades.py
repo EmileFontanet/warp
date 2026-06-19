@@ -30,6 +30,8 @@ prob_type2 = {
 
 }
 prob_type3 = ['HD175219']
+harps_targets = ['HD112410', 'HD8651', 'HD60666', 'HD79202', 'HD67929',
+                 'HD207229', 'HD189080', 'HD126093', 'HD69674', 'HD212953', 'HD215104']
 
 
 def load_star_params():

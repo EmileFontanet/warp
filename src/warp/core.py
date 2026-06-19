@@ -1,18 +1,14 @@
 from . import cascades
 from . import dace
-from .simbad import query_simbad
-from .hipparcos import get_hip_id, query_hip_photometry, query_gaia_nss, query_kervella_table
 from .stats import mad_clip_mask, weighted_mean
-from .tseries import gls_periodogram
 import pandas as pd
-from .config import accepted_pipelines
 import numpy as np
 
 
 class Star:
     def __init__(self, name=None, instrument=None, load_rv=True, load_tess=False, max_erv=30,
-                 do_adjust_means=True, do_secular_corr=True, skip_ndrs=True, keep_bad_qc=False, verbose=True,
-                 filter_pipeline=True, filter_columns=True, remove_negative_erv=True, set_ndrs_as_ins=True, simbad_table=None):
+                 do_adjust_means=True, do_secular_corr=True, skip_ndrs=False, keep_bad_qc=False, verbose=True,
+                 latest_pipeline=True, filter_columns=True, remove_negative_erv=True, set_ndrs_as_ins=True, simbad_table=None):
         """A class instance representing a star. This object allows to download, visualize and analyse RV and 
         photometric data.
 
@@ -27,7 +23,7 @@ class Star:
             skip_ndrs (bool, optional): If true, points obtained with the new CORALIE drs will be discarded. Defaults to True.
             keep_bad_qc (bool, optional): If true, points which fail the drs QC are kept. Defaults to False.
             verbose (bool, optional): If False, all the printing/loggingis suppressed. Defaults to True.
-            filter_pipeline (bool, optional): If true, only the latest known pipeline is kept for each instrument. Defaults to True.
+            latest_pipeline (bool, optional): If true, only the latest known pipeline is kept for each instrument. Defaults to True.
             filter_columns (bool, optional): If true, the columns for the RV data obtained from DACE are filtered in order to keep only relevant data. Defaults to True.
             remove_negative_erv (bool, optional): If true, points with a negative RV uncertainty are discarded. Defaults to True.
             simbad_table (pd.DataFrame, optional): A DataFrame containing Simbad data for the star. Defaults to None.
@@ -43,9 +39,10 @@ class Star:
         self.did_secular_corr = False
         self.set_ndrs_as_ins = set_ndrs_as_ins
         self.bad_points = pd.DataFrame()
+        self.simbad_table = simbad_table
         if name is not None and load_rv:
             self.load_rv(filter_columns=filter_columns,
-                         filter_pipeline=filter_pipeline,
+                         latest_pipeline=latest_pipeline,
                          remove_negative_erv=remove_negative_erv, verbose=verbose,
                          skip_ndrs=skip_ndrs, set_ndrs_as_ins=set_ndrs_as_ins)
             if self.do_adjust_means:
@@ -69,11 +66,12 @@ class Star:
         if (self.do_secular_corr):
             if verbose:
                 print("[INFO] Applying secular acceleration correction...")
-            self.rv_data['spectro_ccf_rv'] = apply_secular_correction(
+            self.rv_data['rv'] = apply_secular_correction(
                 self.name,
-                self.rv_data['obj_date_bjd'],
-                self.rv_data['spectro_ccf_rv'],
-                verbose=verbose
+                self.rv_data['rjd'],
+                self.rv_data['rv'],
+                verbose=verbose,
+                astrometric_table=self.simbad_table
             )
         self.do_filtering(filter_columns=filter_columns,
                           filter_pipeline=filter_pipeline,
@@ -82,7 +80,7 @@ class Star:
         return
 
     def load_rv(self, filter_columns=True,
-                filter_pipeline=True,
+                latest_pipeline=True,
                 remove_negative_erv=True, verbose=True,
                 skip_ndrs=True, set_ndrs_as_ins=True):
         self.rv_data = dace.download_points(
@@ -90,52 +88,54 @@ class Star:
             instrument=self.instrument,
             do_secular_corr=self.do_secular_corr,
             skip_ndrs=skip_ndrs,
+            latest_pipeline=latest_pipeline,
             verbose=verbose
         )
-        self.rv_data = self.rv_data.sort_values(by='obj_date_bjd')
+        self.rv_data = self.rv_data.sort_values(by='rjd')
         self.do_filtering(filter_columns=filter_columns,
-                          filter_pipeline=filter_pipeline,
+                          latest_pipeline=latest_pipeline,
                           remove_negative_erv=remove_negative_erv,
                           verbose=verbose,
                           skip_ndrs=skip_ndrs,
                           set_ndrs_as_ins=set_ndrs_as_ins)
         return
 
-    def do_filtering(self, filter_columns=True, filter_pipeline=True, remove_negative_erv=True, verbose=True, skip_ndrs=True, set_ndrs_as_ins=True):
+    def do_filtering(self, filter_columns=True, latest_pipeline=True, remove_negative_erv=True, verbose=True, skip_ndrs=True, set_ndrs_as_ins=True):
         if filter_columns:
             self.filter_columns()
-        if filter_pipeline:
-            self.filter_pipeline(
-                verbose=verbose, skip_ndrs=skip_ndrs, set_ndrs_as_ins=self.set_ndrs_as_ins)
+        # if filter_pipeline:
+        #     self.filter_pipeline(
+        #         verbose=verbose, skip_ndrs=skip_ndrs, set_ndrs_as_ins=self.set_ndrs_as_ins)
         if not self.keep_bad_qc:
-            self.remove_condition(self.rv_data.spectro_drs_qc == False,
+            self.remove_condition(self.rv_data.drs_qc == False,
                                   origin='drs_qc', verbose=verbose, adjust_means=False)
-        self.remove_condition(self.rv_data.spectro_ccf_rv_err > self.max_erv,
+        self.remove_condition(self.rv_data.rv_err > self.max_erv,
                               origin=f"rv_err_gt_{self.max_erv}", verbose=verbose, adjust_means=False)
         if remove_negative_erv:
-            self.remove_condition(self.rv_data.spectro_ccf_rv_err <= 0,
+            self.remove_condition(self.rv_data.rv_err <= 0,
                                   origin='negative_rv_err', verbose=verbose, adjust_means=False)
         return
 
-    def filter_pipeline(self, verbose=True, skip_ndrs=True, set_ndrs_as_ins=True):
-        from .utils import get_latest_pipeline
-        from .config import coralie_ndrs_pipelines
-        if self.rv_data is None:
-            print("[WARN] No RV data loaded, cannot filter pipelines.")
-            return
-        for ins in self.ins.unique():
-            accepted_pipeline = get_latest_pipeline(
-                ins, self.rv_data[self.ins == ins]['ins_drs_version'].unique(), verbose=verbose, skip_ndrs=skip_ndrs)
-            rejected_mask = (self.ins == ins) & (
-                ~self.rv_data['ins_drs_version'].isin(accepted_pipeline))
-            self.rv_data = self.rv_data[~rejected_mask].copy()
-        if set_ndrs_as_ins and not self.skip_ndrs:
-            for ins in self.ins.unique():
-                if 'COR' in ins:
-                    ndrs_mask = (self.ins == ins) & (
-                        self.rv_data['ins_drs_version'].isin(coralie_ndrs_pipelines))
-                    self.rv_data.loc[ndrs_mask, 'ins_name'] = ins + '-NDRS'
-        return
+    # def filter_pipeline(self, verbose=True, skip_ndrs=True, set_ndrs_as_ins=True):
+    #     from .utils import get_latest_pipeline
+    #     from .config import coralie_ndrs_pipelines
+    #     if self.rv_data is None:
+    #         print("[WARN] No RV data loaded, cannot filter pipelines.")
+    #         return
+    #     for ins in self.ins.unique():
+    #         accepted_pipeline = get_latest_pipeline(
+    #             ins, self.rv_data[self.ins == ins]['ins_drs_version'].unique(), verbose=verbose, skip_ndrs=skip_ndrs)
+    #         rejected_mask = (self.ins == ins) & (
+    #             ~self.rv_data['ins_drs_version'].isin(accepted_pipeline))
+    #         self.rv_data = self.rv_data[~rejected_mask].copy()
+    #     if set_ndrs_as_ins and not self.skip_ndrs:
+    #         for ins in self.ins.unique():
+    #             if 'COR' in ins:
+    #                 ndrs_mask = (self.ins == ins) & (
+    #                     self.rv_data['ins_drs_version'].isin(coralie_ndrs_pipelines))
+    #                 self.rv_data.loc[ndrs_mask,
+    #                                  'instrument_name'] = ins + '-NDRS'
+    #     return
 
     def filter_columns(self):
         from .config import ignored_cols
@@ -145,6 +145,8 @@ class Star:
         return
 
     def compute_periodogram(self, min_period=None, max_period=None):
+        from .tseries import gls_periodogram
+
         """Computes the periodogram of the RV time series
 
         Args:
@@ -171,6 +173,8 @@ class Star:
         return freq, power, best_period, fap, power_threshold
 
     def load_hip_photometry(self):
+        from .hipparcos import get_hip_id, query_hip_photometry
+
         if not hasattr(self, 'hip'):
             self.hip = get_hip_id(self.name)
         if self.hip is None:
@@ -180,9 +184,13 @@ class Star:
         return self.hip_photometry
 
     def load_gaia_nss(self):
+        from .hipparcos import query_gaia_nss
+
         return query_gaia_nss(self.gaia_id)
 
     def load_karvella_companion(self):
+        from .hipparcos import get_hip_id, query_kervella_table
+
         if not hasattr(self, 'hip'):
             self.hip = get_hip_id(self.name)
         if self.hip is None:
@@ -190,7 +198,7 @@ class Star:
             return None
         return query_kervella_table(self.hip.replace("HIP ", ""))
 
-    def clip_rv(self, threshold=5, n_iter=3, groups='ins_name', ins_list=None, verbose=True, adjust_means=True, inplace=True):
+    def clip_rv(self, threshold=5, n_iter=3, groups='instrument_name', ins_list=None, verbose=True, adjust_means=True, inplace=True):
         if not hasattr(self, 'rv_data'):
             print("[WARN] No RV data loaded, cannot perform MAD clipping.")
             return
@@ -207,18 +215,18 @@ class Star:
 
     def adjust_means(self, verbose=True, ins_list=None, series=None):
         if series is None:
-            series = ['spectro_ccf_rv',
-                      'spectro_ccf_bispan', 'spectro_ccf_fwhm', 'spectro_ccf_contrast']
+            series = ['rv',
+                      'ccf_bispan', 'ccf_fwhm', 'ccf_contrast']
         if ins_list is None:
-            ins_list = self.rv_data.ins_name.unique()
+            ins_list = self.rv_data.instrument_name.unique()
         if not hasattr(self, 'rv_data'):
             print("[WARN] No RV data loaded, cannot adjust means.")
             return
         for series_ in series:
             for ins in ins_list:
-                for drs in self.rv_data[self.rv_data.ins_name == ins]['ins_drs_version'].unique():
-                    ins_mask = (self.rv_data.ins_name == ins) & (
-                        self.rv_data['ins_drs_version'] == drs)
+                for drs in self.rv_data[self.rv_data.instrument_name == ins]['drs_id'].unique():
+                    ins_mask = (self.rv_data.instrument_name == ins) & (
+                        self.rv_data['drs_id'] == drs)
                     mean_rv, _ = weighted_mean(self.rv_data[series_][ins_mask],
                                                self.rv_data[f'{series_}_err'][ins_mask])
                     self.rv_data.loc[ins_mask, series_] -= mean_rv
@@ -309,7 +317,7 @@ class Star:
                                   model_lw=model_lw)
         return fig, ax
 
-    def bin_by_night(self, group_cols=['date_night', 'ins_name', 'ins_drs_version'], exclude_cols=None, verbose=True):
+    def bin_by_night(self, group_cols=['date_night', 'instrument_name', 'drs_id'], exclude_cols=None, verbose=True):
         from .tseries import bin_by_night
         from .config import exclude_cols_bin_by_night
         if exclude_cols is None:
@@ -324,14 +332,14 @@ class Star:
 
     def remove_single_observations(self, verbose=True):
         for ins in self.ins.unique():
-            if len(self.rv_data[self.rv_data.ins_name == ins]) == 1:
+            if len(self.rv_data[self.rv_data.instrument_name == ins]) == 1:
                 if verbose:
                     print(
                         f"[INFO] Removing single observation for instrument {ins}.")
                 self.remove_condition(
-                    self.rv_data.ins_name == ins, origin='single_observation', verbose=verbose, adjust_means=False)
+                    self.rv_data.instrument_name == ins, origin='single_observation', verbose=verbose, adjust_means=False)
 
-    def fit_keplerian(self, N_pla=3, n_lin=0, stellar_jitter=0, fap_threshold=1e-3, periods_init=[], fix_cor_offsets=False, fit_param=["P", "la0", "K", "sqrtesinw", "sqrtecosw"], fit_ins_jitter=False, ref_epoch=None, fit_stellar_jitter=False):
+    def fit_keplerian(self, N_pla=3, n_lin=0, stellar_jitter=0, fap_threshold=1e-3, periods_init=[], fix_cor_offsets=False, fit_param=["P", "la0", "K", "sqrtesinw", "sqrtecosw"], fit_ins_jitter=False, ref_epoch=None, fit_stellar_jitter=False, verbose=True):
         from .kepmodel_wrapper import fit_keplerian
         self.rv_model = fit_keplerian(
             self.t.values,
@@ -347,7 +355,8 @@ class Star:
             fit_param=fit_param,
             fit_ins_jitter=fit_ins_jitter,
             ref_epoch=ref_epoch,
-            fit_stellar_jitter=fit_stellar_jitter
+            fit_stellar_jitter=fit_stellar_jitter,
+            verbose=verbose
         )
         return self.rv_model
 
@@ -356,7 +365,7 @@ class Star:
         if not hasattr(self, 'rv_model'):
             raise ValueError("No rv_model found. Fit a Keplerian model first.")
         if ins_list is not None:
-            rv_data = self.rv_data[self.rv_data.ins_name.isin(ins_list)]
+            rv_data = self.rv_data[self.rv_data.instrument_name.isin(ins_list)]
         else:
             rv_data = self.rv_data
         fig, ax = plot_rv_keplerian_fit(
@@ -371,32 +380,40 @@ class Star:
         )
         return fig, ax
 
-    def plot_series_periodogram(self, series, ax=None, fig=None):
+    def plot_series_periodogram(self, series, ax=None, fig=None, adjust_means=True, verbose=True):
         from .plotting import plot_series_periodogram
         fig, ax = plot_series_periodogram(
-            rv_data=self.rv_data, series=series, ax=ax, fig=None
+            rv_data=self.rv_data, series=series, ax=ax, fig=None, adjust_means=adjust_means, verbose=verbose
         )
         return fig, ax
 
+    def run_nusyd(self, lc_file, guess_nu=None, plot=False):
+        from .nusyd_wrapper import process_lc_file
+        results = process_lc_file(lc_file, guess_table=guess_nu, plot=plot)
+        return results
+
+    def set_lc_dir(self, lc_dir):
+        self.lc_dir = lc_dir
+
     @property
     def rv(self):
-        return self.rv_data.spectro_ccf_rv if self.rv_data is not None else None
+        return self.rv_data.rv if self.rv_data is not None else None
 
     @property
     def rv_err(self):
-        return self.rv_data.spectro_ccf_rv_err if self.rv_data is not None else None
+        return self.rv_data.rv_err if self.rv_data is not None else None
 
     @property
     def raw_f(self):
-        return self.rv_data.file_rootpath if 'file_rootpath' in self.rv_data.columns else None
+        return self.rv_data.file_rootname if 'file_rootname' in self.rv_data.columns else None
 
     @property
     def t(self):
-        return self.rv_data.obj_date_bjd if self.rv_data is not None else None
+        return self.rv_data.rjd if self.rv_data is not None else None
 
     @property
     def ins(self):
-        return self.rv_data.ins_name if self.rv_data is not None else None
+        return self.rv_data.instrument_name if self.rv_data is not None else None
 
     @property
     def n_points(self):
@@ -407,8 +424,8 @@ class Star:
         if self.rv_data is None:
             return None
         n_points_dict = {}
-        for ins in self.rv_data.ins_name.unique():
-            ins_mask = self.rv_data.ins_name == ins
+        for ins in self.rv_data.instrument_name.unique():
+            ins_mask = self.rv_data.instrument_name == ins
             n_points_dict[ins] = np.sum(ins_mask)
         return n_points_dict
 
@@ -429,8 +446,8 @@ class Star:
         if self.rv_data is None:
             return None
         mad_dict = {}
-        for ins in self.rv_data.ins_name.unique():
-            ins_mask = self.rv_data.ins_name == ins
+        for ins in self.rv_data.instrument_name.unique():
+            ins_mask = self.rv_data.instrument_name == ins
             median = np.median(self.rv[ins_mask])
             mad = np.median(np.abs(self.rv[ins_mask] - median))
             mad_dict[ins] = mad
@@ -441,8 +458,8 @@ class Star:
         if self.rv_data is None:
             return None
         rms_dict = {}
-        for ins in self.rv_data.ins_name.unique():
-            ins_mask = self.rv_data.ins_name == ins
+        for ins in self.rv_data.instrument_name.unique():
+            ins_mask = self.rv_data.instrument_name == ins
             rms_dict[ins] = np.std(self.rv[ins_mask])
         return rms_dict
 
@@ -476,3 +493,22 @@ class Star:
               for c in self._ids if c.startswith('Gaia DR3')][0]
 
         return int(id) if len(id) > 0 else None
+
+    @property
+    def tic_id(self):
+        if self._ids is None:
+            self.load_ids()
+        id = [c.replace('TIC ', "")
+              for c in self._ids if c.startswith('TIC')][0]
+
+        return int(id) if len(id) > 0 else None
+
+    @property
+    def avlb_lightcurves(self):
+        from glob import glob
+        if not hasattr(self, 'lc_dir'):
+            print(
+                "[WARN] No lc_dir specified, using data/ by default. You can set it using the set_lc_dir method.")
+            self.lc_dir = 'data/'
+        lcs = glob(f"{self.lc_dir}/{self.name.replace(' ', '')}/*.fits")
+        return lcs
