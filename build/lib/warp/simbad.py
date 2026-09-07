@@ -1,0 +1,65 @@
+# src/warp/simbad.py
+from astropy.coordinates import SkyCoord
+import astropy.units as u
+import logging
+
+
+def query_simbad(name, verbose=True):
+    from astroquery.simbad import Simbad
+
+    """Return coordinates and basic astrometric params from SIMBAD."""
+    if verbose is False:
+        logging.getLogger('astroquery.utils.tap.core').setLevel(logging.ERROR)
+        logging.getLogger('astroquery.utils.tap').setLevel(logging.ERROR)
+        logging.getLogger('astroquery').setLevel(logging.ERROR)
+    Simbad.reset_votable_fields()
+    Simbad.add_votable_fields('pmra', 'pmdec', 'ra',
+                              'dec', 'plx_value', 'rvz_radvel', 'oid', 'main_id')
+
+    result = Simbad.query_object(name)
+    if result is None:
+        raise ValueError(f"SIMBAD could not find object: {name}")
+    # ra(d) and dec(d) are both in degrees
+    ra = result["ra"][0]
+    dec = result["dec"][0]
+    coord = SkyCoord(ra, dec, unit=(u.deg, u.deg))
+
+    pmra = result["pmra"][0] * u.mas/u.yr
+    pmdec = result["pmdec"][0] * u.mas/u.yr
+    plx = result["plx_value"][0] * u.mas
+    rv = result["rvz_radvel"][0] * u.km/u.s
+    return {
+        "coord": coord,
+        "pmra": pmra,
+        "pmdec": pmdec,
+        "parallax": plx,
+        "rv": rv,
+        "source": 'simbad',
+        "main_id": result['main_id'][0],
+        "oid": result['oid'][0],
+    }
+
+
+def get_ids(star):
+    from astroquery.simbad import Simbad
+
+    try:
+        result_table = Simbad.query_objectids(star)
+    except Exception as e:
+        print('Could not retrieve SIMBAD IDs:', e)
+        return None
+    return [result_table['id'][i] for i in range(len(result_table))]
+
+
+def query_simbad_oid(name):
+    from astroquery.simbad import Simbad
+    Simbad.reset_votable_fields()
+    Simbad.add_votable_fields('oid', 'main_id')
+    try:
+        result = Simbad.query_object(name)
+    except Exception as e:
+        print('Could not retrieve SIMBAD OID:', e)
+        return None
+    if result is None:
+        raise ValueError(f"SIMBAD could not find object: {name}")
+    return str(result['oid'][0]), result['main_id'][0]

@@ -313,7 +313,7 @@ class Star:
         return fig, ax
 
     def plot_phasefold(self,
-                       planet_index='all',
+                       planet_index=0,
                        fig=None,
                        ax=None,
                        phase_pad=40,
@@ -323,40 +323,21 @@ class Star:
                        model_color="black",
                        model_lw=1.5,):
         from .plotting import plot_phase_fold
-        from matplotlib import pyplot as plt
         if self.rv_model is None:
             raise ValueError(
                 'No rv model computed. Compute one using the fit_keplerian method')
-        if planet_index != 'all':
-            fig, ax = plot_phase_fold(self.rv_model,
-                                      planet_index='planet_index',
-                                      fig=fig,
-                                      ax=ax,
-                                      star_name=self.name,
-                                      instruments=self.ins,
-                                      phase_pad=phase_pad,
-                                      n_model=n_model,
-                                      data_alpha_main=data_alpha_main,
-                                      data_alpha_wrap=data_alpha_wrap,
-                                      model_color=model_color,
-                                      model_lw=model_lw)
-        else:
-            fig, axs = plt.subplots(
-                ncols=self.rv_model.nkep, figsize=(6*self.rv_model.nkep, 5))
-            for i in range(self.rv_model.nkep):
-                _, _ = plot_phase_fold(self.rv_model,
-                                       planet_index=i,
-                                       fig=fig,
-                                       ax=axs[i],
-                                       star_name=self.name,
-                                       instruments=self.ins,
-                                       phase_pad=phase_pad,
-                                       n_model=n_model,
-                                       data_alpha_main=data_alpha_main,
-                                       data_alpha_wrap=data_alpha_wrap,
-                                       model_color=model_color,
-                                       model_lw=model_lw)
-            return fig, axs
+        fig, ax = plot_phase_fold(self.rv_model,
+                                  planet_index=planet_index,
+                                  fig=fig,
+                                  ax=ax,
+                                  star_name=self.name,
+                                  instruments=self.ins,
+                                  phase_pad=phase_pad,
+                                  n_model=n_model,
+                                  data_alpha_main=data_alpha_main,
+                                  data_alpha_wrap=data_alpha_wrap,
+                                  model_color=model_color,
+                                  model_lw=model_lw)
         return fig, ax
 
     def bin_by_night(self, group_cols=['date_night', 'instrument_name', 'drs_id'], exclude_cols=None, verbose=True):

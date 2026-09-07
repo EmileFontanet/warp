@@ -19,9 +19,9 @@ default_inst_jitter = {
 }
 
 offsets_relative_to_cor14 = {
-    'CORALIE98': -50,
-    'CORALIE07': -0,
-    'CORALIE24': -0,
+    'CORALIE98': -25,
+    'CORALIE07': -25,
+    'CORALIE24': -10,
     'CORALIE14': 0,
 }
 
